@@ -1,0 +1,26 @@
+{
+  "name": "Grupo NGX",
+  "short_name": "NGX",
+  "description": "Painel de metas de vendas do Grupo NGX",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0e1219",
+  "theme_color": "#7bdd00",
+  "orientation": "any",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "https://i.postimg.cc/6qv9JRHH/logo-app-ngx.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://i.postimg.cc/6qv9JRHH/logo-app-ngx.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
