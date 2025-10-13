@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { useMetasSemana, METRICAS_DISPONIVEIS } from './useMetasSemana'
 
 type MetricaSemanal = Database['public']['Tables']['metricas_semanais']['Row']
 type MetricaSemanalInsert = Database['public']['Tables']['metricas_semanais']['Insert']
@@ -31,7 +32,26 @@ export function useMetricas() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Métricas padrão
+  // Hook para metas personalizadas
+  const { getMetaValue, formatValue, loading: metasLoading } = useMetasSemana()
+
+  // Função para gerar métricas com metas personalizadas
+  const generateMetricsWithCustomTargets = () => {
+    return METRICAS_DISPONIVEIS.map((metrica, index) => {
+      const metaValue = getMetaValue(metrica.key)
+      const target = metaValue > 0 ? formatValue(metaValue, metrica.format) : '-'
+      
+      return {
+        id: (index + 1).toString(),
+        name: metrica.label,
+        target,
+        real: '',
+        status: 'sem-meta' as const
+      }
+    })
+  }
+
+  // Métricas padrão (fallback)
   const defaultMetrics = [
     { id: '1', name: 'MRR Atual', target: '-', real: '', status: 'sem-meta' },
     { id: '2', name: 'Clientes ativos', target: '-', real: '', status: 'sem-meta' },
@@ -116,8 +136,9 @@ export function useMetricas() {
       await loadWeeklyHistory()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar métricas semanais')
-      // Fallback para métricas padrão em caso de erro
-      setCurrentMetrics(defaultMetrics)
+      // Fallback para métricas com metas personalizadas ou padrão em caso de erro
+      const customMetrics = generateMetricsWithCustomTargets()
+      setCurrentMetrics(customMetrics.length > 0 ? customMetrics : defaultMetrics)
     } finally {
       setLoading(false)
     }
@@ -257,15 +278,18 @@ export function useMetricas() {
       if (history[mostRecentWeekKey]) {
         setCurrentMetrics(history[mostRecentWeekKey].metrics)
       } else {
-        setCurrentMetrics(defaultMetrics)
+        // Usar métricas com metas personalizadas se disponíveis
+        const customMetrics = generateMetricsWithCustomTargets()
+        setCurrentMetrics(customMetrics.length > 0 ? customMetrics : defaultMetrics)
       }
 
       setError(null)
     } catch (err) {
       console.error('Erro ao carregar histórico semanal:', err)
       setError('Erro ao carregar dados')
-      // Fallback para métricas padrão
-      setCurrentMetrics(defaultMetrics)
+      // Fallback para métricas com metas personalizadas ou padrão
+      const customMetrics = generateMetricsWithCustomTargets()
+      setCurrentMetrics(customMetrics.length > 0 ? customMetrics : defaultMetrics)
     } finally {
       setLoading(false)
     }
@@ -437,6 +461,13 @@ export function useMetricas() {
   useEffect(() => {
     fetchMetricasSemanais()
   }, [])
+
+  // Aguardar carregamento das metas antes de carregar histórico
+  useEffect(() => {
+    if (!metasLoading) {
+      loadWeeklyHistory()
+    }
+  }, [metasLoading])
 
   return {
     metricasSemanais,

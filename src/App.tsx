@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppSidebar } from "@/components/AppSidebar";
 import { PWAUpdatePrompt } from "@/components/PWAUpdatePrompt";
+import { useReminders } from "@/hooks/useReminders";
 import Index from "./pages/Index";
 import Lancamento from "./pages/Lancamento";
 import Vendas from "./pages/Vendas";
@@ -18,6 +19,9 @@ const queryClient = new QueryClient();
 
 const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // Inicializa o serviço de lembretes
+  useReminders();
 
   return (
     <QueryClientProvider client={queryClient}>

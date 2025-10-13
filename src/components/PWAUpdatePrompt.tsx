@@ -7,6 +7,11 @@ import { RefreshCw } from "lucide-react";
 export function PWAUpdatePrompt() {
   const [showPrompt, setShowPrompt] = useState(false);
 
+  // Desabilitar PWA em desenvolvimento para evitar erros
+  if (import.meta.env.DEV) {
+    return null;
+  }
+
   const {
     offlineReady: [offlineReady, setOfflineReady],
     needRefresh: [needRefresh, setNeedRefresh],

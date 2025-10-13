@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Settings, Trash2, Edit, Check, X } from "lucide-react";
+import { Settings, Trash2, Edit, Check, X, Target, Save } from "lucide-react";
 import { useConfig, Vendedor } from "@/hooks/useConfig";
 import { useVendedores } from "@/hooks/useVendedores";
+import { useMetasSemana, METRICAS_DISPONIVEIS } from "@/hooks/useMetasSemana";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -24,6 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
 const vendedorSchema = z.object({
@@ -47,9 +49,19 @@ const Configuracoes = () => {
     deleteVendedor,
   } = useVendedores();
 
+  const {
+    metas,
+    loading: metasLoading,
+    updateMeta: updateMetaSemanal,
+    getMetaValue,
+    formatValue,
+    metricasDisponiveis
+  } = useMetasSemana();
+
   const [meta, setMeta] = useState("R$ 0,00");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Vendedor | null>(null);
+  const [metasSemanais, setMetasSemanais] = useState<Record<string, string>>({});
 
   // Atualizar meta quando config mudar
   useEffect(() => {
@@ -61,6 +73,18 @@ const Configuracoes = () => {
       }));
     }
   }, [config?.meta]);
+
+  // Inicializar metas semanais apenas uma vez quando carregadas
+  useEffect(() => {
+    if (metas.length > 0 && Object.keys(metasSemanais).length === 0) {
+      const metasObj: Record<string, string> = {};
+      metricasDisponiveis.forEach(metrica => {
+        const valor = getMetaValue(metrica.key);
+        metasObj[metrica.key] = valor > 0 ? formatValue(valor, metrica.format) : '';
+      });
+      setMetasSemanais(metasObj);
+    }
+  }, [metas.length]);
 
   const form = useForm<z.infer<typeof vendedorSchema>>({
     resolver: zodResolver(vendedorSchema),
@@ -83,6 +107,77 @@ const Configuracoes = () => {
   const handleMetaChange = (value: string) => {
     const formatted = formatCurrency(value);
     setMeta(formatted);
+  };
+
+  const handleMetaSemanalChange = (metricaKey: string, value: string, format?: 'currency' | 'number' | 'hours') => {
+    // Permitir digitação livre, sem formatação automática
+    setMetasSemanais(prev => ({
+      ...prev,
+      [metricaKey]: value
+    }));
+  };
+
+  const handleSaveMetaSemanal = async (metricaKey: string, format?: 'currency' | 'number' | 'hours') => {
+    const valorString = metasSemanais[metricaKey] || '';
+    
+    // Se o campo estiver vazio, salvar como 0 (remove a meta)
+    if (valorString.trim() === '') {
+      try {
+        const result = await updateMetaSemanal(metricaKey, 0);
+        if (result.success) {
+          toast.success("Meta removida com sucesso!");
+          setMetasSemanais(prev => ({
+            ...prev,
+            [metricaKey]: ''
+          }));
+        } else {
+          toast.error(result.error || "Erro ao remover meta");
+        }
+      } catch (error) {
+        toast.error("Erro ao remover meta");
+        console.error("Erro ao remover meta:", error);
+      }
+      return;
+    }
+
+    let valorNumerico = 0;
+
+    if (format === 'currency') {
+      // Para moeda, aceitar tanto vírgula quanto ponto como separador decimal
+      const cleanValue = valorString.replace(/[^\d,\.]/g, "").replace(",", ".");
+      valorNumerico = parseFloat(cleanValue);
+    } else if (format === 'hours') {
+      // Para horas, extrair apenas números
+      const cleanValue = valorString.replace(/[^\d,\.]/g, "").replace(",", ".");
+      valorNumerico = parseFloat(cleanValue);
+    } else {
+      // Para números, aceitar vírgula e ponto
+      const cleanValue = valorString.replace(/[^\d,\.]/g, "").replace(",", ".");
+      valorNumerico = parseFloat(cleanValue);
+    }
+
+    if (isNaN(valorNumerico) || valorNumerico < 0) {
+      toast.error("Valor inválido");
+      return;
+    }
+
+    try {
+      const result = await updateMetaSemanal(metricaKey, valorNumerico);
+      if (result.success) {
+        toast.success("Meta semanal atualizada com sucesso!");
+        // Atualizar o valor formatado no estado após salvar
+        const valorFormatado = formatValue(valorNumerico, format);
+        setMetasSemanais(prev => ({
+          ...prev,
+          [metricaKey]: valorFormatado
+        }));
+      } else {
+        toast.error(result.error || "Erro ao atualizar meta");
+      }
+    } catch (error) {
+      toast.error("Erro ao atualizar meta semanal");
+      console.error("Erro ao atualizar meta semanal:", error);
+    }
   };
 
   const handleSaveMeta = async () => {
@@ -156,7 +251,7 @@ const Configuracoes = () => {
   };
 
   // Mostrar loading enquanto os dados estão carregando
-  if (configLoading || vendedoresLoading) {
+  if (configLoading || vendedoresLoading || metasLoading) {
     return (
       <div className="min-h-screen bg-background p-8">
         <div className="max-w-4xl mx-auto">
@@ -206,6 +301,52 @@ const Configuracoes = () => {
               >
                 Salvar Meta
               </Button>
+            </div>
+          </section>
+
+          {/* Metas Semanais */}
+          <section className="mb-12">
+            <div className="flex items-center gap-3 mb-6">
+              <Target className="h-6 w-6 text-primary" />
+              <h2 className="text-xl font-semibold text-foreground">
+                Metas Semanais
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {metricasDisponiveis.map((metrica) => (
+                <Card key={metrica.key} className="border border-border">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{metrica.label}</CardTitle>
+                    <CardDescription className="text-sm">
+                      {metrica.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-2 block">
+                        Meta {metrica.format === 'currency' ? '(R$)' : metrica.format === 'hours' ? '(horas)' : ''}
+                      </label>
+                      <Input
+                        value={metasSemanais[metrica.key] || ''}
+                        onChange={(e) => handleMetaSemanalChange(metrica.key, e.target.value, metrica.format)}
+                        placeholder={
+                          metrica.format === 'currency' ? 'R$ 0,00' : 
+                          metrica.format === 'hours' ? '0h' : '0'
+                        }
+                        className="text-sm"
+                      />
+                    </div>
+                    <Button
+                      onClick={() => handleSaveMetaSemanal(metrica.key, metrica.format)}
+                      size="sm"
+                      className="w-full bg-primary hover:bg-primary/90"
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      Salvar Meta
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </section>
 

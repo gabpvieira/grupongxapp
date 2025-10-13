@@ -12,21 +12,18 @@ export function useVendedores() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchVendedores = async () => {
-    try {
-      setLoading(true)
-      const { data, error } = await supabase
-        .from('vendedores')
-        .select('*')
-        .order('nome')
-
-      if (error) throw error
-      setVendedores(data || [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar vendedores')
-    } finally {
-      setLoading(false)
+    const { data, error } = await supabase
+      .from('vendedores')
+      .select('*')
+      .order('nome');
+    
+    if (error) {
+      setError(error.message);
+    } else {
+      setVendedores(data || []);
     }
-  }
+    setLoading(false);
+  };
 
   const addVendedor = async (vendedor: VendedorInsert) => {
     try {

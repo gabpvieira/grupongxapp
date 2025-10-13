@@ -64,7 +64,7 @@ const ControlledInput = ({ metric, onUpdate }: { metric: Metric, onUpdate: (id: 
     <Input
       value={localValue}
       onChange={handleChange}
-      className="bg-[#1f2937] border-[#4b5563] text-[#ffffff] max-w-32"
+      className="bg-slate-700/50 border-slate-600/50 text-white placeholder:text-slate-400 focus:border-[#8bdb00] focus:ring-[#8bdb00]/20 max-w-32"
       placeholder="Digite o valor"
     />
   );
@@ -88,10 +88,7 @@ const MetricasSemana: React.FC = () => {
   const [selectedWeek, setSelectedWeek] = useState<string>('');
   const [showNotification, setShowNotification] = useState(false);
 
-  // Carregar dados do Supabase
-  useEffect(() => {
-    loadWeeklyHistory();
-  }, []); // Removendo a dependência para evitar re-renderizações
+  // O carregamento agora é gerenciado automaticamente pelo hook useMetricas
 
   // Função para calcular status baseado na meta e valor real
   const calculateStatus = (target: string, real: string): Metric['status'] => {
@@ -205,31 +202,31 @@ const MetricasSemana: React.FC = () => {
       case 'meta-ultrapassada':
         return { 
           icon: <Rocket className="w-4 h-4" />, 
-          color: 'bg-[#16a34a] text-[#dcfce7] border-[#15803d]',
+          color: 'bg-green-600 text-green-100 border-green-500',
           text: 'Meta ultrapassada'
         };
       case 'meta-atingida':
         return { 
           icon: <CheckCircle className="w-4 h-4" />, 
-          color: 'bg-[#15803d] text-[#dcfce7] border-[#166534]',
+          color: 'bg-[#8bdb00] text-black border-[#7bc700]',
           text: 'Meta atingida'
         };
       case 'parcial':
         return { 
           icon: <AlertTriangle className="w-4 h-4" />, 
-          color: 'bg-[#ca8a04] text-[#fef3c7] border-[#a16207]',
+          color: 'bg-yellow-600 text-yellow-100 border-yellow-500',
           text: 'Parcialmente atingida'
         };
       case 'nao-atingida':
         return { 
           icon: <XCircle className="w-4 h-4" />, 
-          color: 'bg-[#dc2626] text-[#fecaca] border-[#b91c1c]',
+          color: 'bg-red-600 text-red-100 border-red-500',
           text: 'Meta não atingida'
         };
       default:
         return { 
           icon: <Minus className="w-4 h-4" />, 
-          color: 'bg-[#374151] text-[#d1d5db] border-[#4b5563]',
+          color: 'bg-slate-600 text-slate-300 border-slate-500',
           text: 'Sem meta definida'
         };
     }
@@ -240,23 +237,23 @@ const MetricasSemana: React.FC = () => {
     <div className="overflow-x-auto">
       <table className="w-full">
         <thead>
-          <tr className="border-b border-[#374151]">
-            <th className="text-left p-3 text-[#d1d5db] font-semibold">MÉTRICA</th>
-            <th className="text-left p-3 text-[#d1d5db] font-semibold">META</th>
-            <th className="text-left p-3 text-[#d1d5db] font-semibold">REAL</th>
-            <th className="text-left p-3 text-[#d1d5db] font-semibold">STATUS</th>
+          <tr className="border-b border-slate-700/50">
+            <th className="text-left p-3 text-slate-300 font-medium">MÉTRICA</th>
+            <th className="text-left p-3 text-slate-300 font-medium">META</th>
+            <th className="text-left p-3 text-slate-300 font-medium">REAL</th>
+            <th className="text-left p-3 text-slate-300 font-medium">STATUS</th>
           </tr>
         </thead>
         <tbody>
           {metrics.map((metric) => {
             const statusDisplay = getStatusDisplay(metric.status);
             return (
-              <tr key={metric.id} className="border-b border-[#1f2937] hover:bg-[#1f2937]/50">
-                <td className="p-3 text-[#ffffff] font-medium">{metric.name}</td>
-                <td className="p-3 text-[#d1d5db]">{metric.target}</td>
+              <tr key={metric.id} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
+                <td className="p-3 text-slate-200 font-medium">{metric.name}</td>
+                <td className="p-3 text-slate-300">{metric.target}</td>
                 <td className="p-3">
                   {isReadOnly ? (
-                    <span className="text-[#ffffff]">{metric.real || '-'}</span>
+                    <span className="text-slate-200">{metric.real || '-'}</span>
                   ) : (
                     <ControlledInput
                       metric={metric}
@@ -280,9 +277,9 @@ const MetricasSemana: React.FC = () => {
 
   // Renderizar legenda de status
   const renderStatusLegend = () => (
-    <Card className="bg-[#1f2937] border-[#374151] mt-6">
+    <Card className="bg-slate-800/60 border-slate-700/50 backdrop-blur-sm">
       <CardHeader>
-        <CardTitle className="text-[#ffffff] text-sm">Legenda de Status</CardTitle>
+        <CardTitle className="text-slate-200 text-sm">Legenda de Status</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -299,7 +296,7 @@ const MetricasSemana: React.FC = () => {
                 <Badge className={`${display.color} flex items-center gap-1`}>
                   {display.icon}
                 </Badge>
-                <span className="text-[#d1d5db] text-xs">{label}</span>
+                <span className="text-slate-300 text-xs">{label}</span>
               </div>
             );
           })}
@@ -314,16 +311,16 @@ const MetricasSemana: React.FC = () => {
       .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime());
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-[#ffffff] flex items-center gap-2">
-            <Calendar className="w-6 h-6" />
+          <h2 className="text-2xl font-bold text-slate-200 flex items-center gap-2">
+            <Calendar className="w-6 h-6 text-[#8bdb00]" />
             Histórico de Registros
           </h2>
           <Button 
             onClick={() => setViewMode('current')}
             variant="outline"
-            className="border-[#4b5563] text-[#d1d5db] hover:bg-[#374151]"
+            className="border-slate-600/50 text-slate-300 hover:bg-slate-700/50 hover:text-white hover:border-[#8bdb00]/50"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
@@ -331,11 +328,11 @@ const MetricasSemana: React.FC = () => {
         </div>
 
         {sortedWeeks.length === 0 ? (
-          <Card className="bg-[#1f2937] border-[#374151]">
+          <Card className="bg-slate-800/60 border-slate-700/50 backdrop-blur-sm">
             <CardContent className="p-8 text-center">
-              <BarChart3 className="w-12 h-12 text-[#6b7280] mx-auto mb-4" />
-              <p className="text-[#9ca3af]">Nenhuma semana registrada ainda.</p>
-              <p className="text-[#6b7280] text-sm mt-2">
+              <BarChart3 className="w-12 h-12 text-slate-500 mx-auto mb-4" />
+              <p className="text-slate-400">Nenhuma semana registrada ainda.</p>
+              <p className="text-slate-500 text-sm mt-2">
                 Registre sua primeira semana para começar a acompanhar seu progresso!
               </p>
             </CardContent>
@@ -343,19 +340,19 @@ const MetricasSemana: React.FC = () => {
         ) : (
           <div className="grid gap-4">
             {sortedWeeks.map(([weekKey, weekData]) => (
-              <Card key={weekKey} className="bg-[#1f2937] border-[#374151] hover:bg-[#1f2937]/80 transition-colors">
+              <Card key={weekKey} className="bg-slate-800/60 border-slate-700/50 hover:bg-slate-800/80 transition-all duration-200 backdrop-blur-sm">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-[#ffffff] font-semibold">
+                      <h3 className="text-slate-200 font-semibold">
                         Semana de {weekData.dateRange}
                       </h3>
                       <div className="flex items-center gap-4 mt-2 text-sm">
-                        <span className="text-[#4ade80]">
+                        <span className="text-[#8bdb00]">
                           {weekData.summary.metasAtingidas + weekData.summary.metasUltrapassadas}/{weekData.summary.totalMetas} metas atingidas
                         </span>
                         {weekData.summary.metasUltrapassadas > 0 && (
-                          <span className="text-[#86efac] flex items-center gap-1">
+                          <span className="text-green-400 flex items-center gap-1">
                             <Rocket className="w-3 h-3" />
                             {weekData.summary.metasUltrapassadas} ultrapassadas
                           </span>
@@ -369,7 +366,7 @@ const MetricasSemana: React.FC = () => {
                       }}
                       variant="outline"
                       size="sm"
-                      className="border-[#4b5563] text-[#d1d5db] hover:bg-[#374151]"
+                      className="border-slate-600/50 text-slate-300 hover:bg-slate-700/50 hover:text-white hover:border-[#8bdb00]/50"
                     >
                       <Eye className="w-4 h-4 mr-2" />
                       Visualizar Desempenho
@@ -392,13 +389,13 @@ const MetricasSemana: React.FC = () => {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-[#ffffff]">
+          <h2 className="text-2xl font-bold text-slate-200">
             Desempenho da Semana — {weekData.dateRange}
           </h2>
           <Button 
             onClick={() => setViewMode('history')}
             variant="outline"
-            className="border-[#4b5563] text-[#d1d5db] hover:bg-[#374151]"
+            className="border-slate-600/50 text-slate-300 hover:bg-slate-700/50 hover:text-white hover:border-[#8bdb00]/50"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar ao Histórico
@@ -407,44 +404,44 @@ const MetricasSemana: React.FC = () => {
 
         {/* Resumo da semana */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="bg-[#14532d]/20 border-[#15803d]">
+          <Card className="bg-green-900/20 border-green-600/50 backdrop-blur-sm">
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-[#4ade80]">
+              <div className="text-2xl font-bold text-green-400">
                 {weekData.summary.metasUltrapassadas}
               </div>
-              <div className="text-[#86efac] text-sm">Ultrapassadas</div>
+              <div className="text-green-300 text-sm">Ultrapassadas</div>
             </CardContent>
           </Card>
-          <Card className="bg-[#166534]/20 border-[#16a34a]">
+          <Card className="bg-[#8bdb00]/10 border-[#8bdb00]/30 backdrop-blur-sm">
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-[#4ade80]">
+              <div className="text-2xl font-bold text-[#8bdb00]">
                 {weekData.summary.metasAtingidas}
               </div>
-              <div className="text-[#86efac] text-sm">Atingidas</div>
+              <div className="text-[#8bdb00]/80 text-sm">Atingidas</div>
             </CardContent>
           </Card>
-          <Card className="bg-[#92400e]/20 border-[#ca8a04]">
+          <Card className="bg-yellow-900/20 border-yellow-600/50 backdrop-blur-sm">
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-[#facc15]">
+              <div className="text-2xl font-bold text-yellow-400">
                 {weekData.summary.parciais}
               </div>
-              <div className="text-[#fde047] text-sm">Parciais</div>
+              <div className="text-yellow-300 text-sm">Parciais</div>
             </CardContent>
           </Card>
-          <Card className="bg-[#991b1b]/20 border-[#dc2626]">
+          <Card className="bg-red-900/20 border-red-600/50 backdrop-blur-sm">
             <CardContent className="p-4 text-center">
-              <div className="text-2xl font-bold text-[#f87171]">
+              <div className="text-2xl font-bold text-red-400">
                 {weekData.summary.metasNaoAtingidas}
               </div>
-              <div className="text-[#fca5a5] text-sm">Não Atingidas</div>
+              <div className="text-red-300 text-sm">Não Atingidas</div>
             </CardContent>
           </Card>
         </div>
 
         {/* Tabela de métricas (somente leitura) */}
-        <Card className="bg-[#1f2937] border-[#374151]">
+        <Card className="bg-slate-800/60 border-slate-700/50 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="text-[#ffffff]">Métricas Detalhadas</CardTitle>
+            <CardTitle className="text-slate-200">Métricas Detalhadas</CardTitle>
           </CardHeader>
           <CardContent>
             {renderMetricsTable(weekData.metrics, true)}
@@ -458,23 +455,23 @@ const MetricasSemana: React.FC = () => {
   const renderCurrentWeek = () => (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-[#ffffff] flex items-center gap-3">
-          <TrendingUp className="w-8 h-8 text-[#acf500]" />
+        <h1 className="text-3xl font-bold text-slate-200 flex items-center gap-3">
+          <TrendingUp className="w-8 h-8 text-[#8bdb00]" />
           Métricas da Semana
         </h1>
         <Button 
           onClick={() => setViewMode('history')}
           variant="outline"
-          className="border-[#4b5563] text-[#d1d5db] hover:bg-[#374151]"
+          className="border-slate-600/50 text-slate-300 hover:bg-slate-700/50 hover:text-white hover:border-[#8bdb00]/50"
         >
           <Calendar className="w-4 h-4 mr-2" />
           Ver Histórico
         </Button>
       </div>
 
-      <Card className="bg-[#1f2937] border-[#374151]">
+      <Card className="bg-slate-800/60 border-slate-700/50 backdrop-blur-sm">
         <CardHeader>
-          <CardTitle className="text-[#ffffff]">
+          <CardTitle className="text-slate-200">
             Semana de {getWeekRange(getMostRecentWeekKey())}
           </CardTitle>
         </CardHeader>
@@ -485,7 +482,7 @@ const MetricasSemana: React.FC = () => {
             <Button 
               onClick={saveCurrentWeek}
               disabled={loading}
-              className="bg-[#acf500] hover:bg-[#9de000] text-black font-semibold px-8 py-2 disabled:opacity-50"
+              className="bg-[#8bdb00] hover:bg-[#7bc700] text-black font-semibold px-8 py-2 disabled:opacity-50 transition-all duration-200"
             >
               <Save className="w-4 h-4 mr-2" />
               {loading ? 'Salvando...' : 'Salvar Semana'}
@@ -498,7 +495,7 @@ const MetricasSemana: React.FC = () => {
 
       {/* Notificação de sucesso */}
       {showNotification && (
-        <div className="fixed top-4 right-4 bg-[#16a34a] text-[#ffffff] px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50">
+        <div className="fixed top-4 right-4 bg-[#8bdb00] text-black px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50 backdrop-blur-sm">
           <CheckCircle className="w-5 h-5" />
           ✅ Semana salva com sucesso!
         </div>
@@ -506,7 +503,7 @@ const MetricasSemana: React.FC = () => {
       
       {/* Notificação de erro */}
       {error && (
-        <div className="fixed top-4 right-4 bg-[#dc2626] text-[#ffffff] px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50">
+        <div className="fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 z-50 backdrop-blur-sm">
           <XCircle className="w-5 h-5" />
           ❌ Erro: {error}
         </div>
@@ -516,7 +513,7 @@ const MetricasSemana: React.FC = () => {
 
   // Renderizar baseado no modo de visualização
   return (
-    <div className="min-h-screen bg-[#111827] p-6">
+    <div className="min-h-screen bg-slate-900/98 backdrop-blur-sm p-6">
       <div className="max-w-6xl mx-auto">
         {viewMode === 'current' && renderCurrentWeek()}
         {viewMode === 'history' && renderHistory()}

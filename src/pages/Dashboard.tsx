@@ -4,7 +4,7 @@ import { useVendas } from "@/hooks/useVendas";
 import { useConfig } from "@/hooks/useConfig";
 
 const Dashboard = () => {
-  const { getTotalVendas } = useVendas();
+  const { getVendasPorMes } = useVendas();
   const { config } = useConfig();
   const [totalVendas, setTotalVendas] = useState(0);
 
@@ -14,7 +14,12 @@ const Dashboard = () => {
 
   useEffect(() => {
     const updateTotal = () => {
-      const total = getTotalVendas();
+      const now = new Date();
+      const vendasMes = getVendasPorMes(now.getMonth(), now.getFullYear());
+      const total = vendasMes.reduce(
+        (sum, v) => sum + (typeof v.valor === 'number' ? v.valor : Number(v.valor)),
+        0
+      );
       setTotalVendas(total);
     };
 
@@ -22,7 +27,7 @@ const Dashboard = () => {
     const interval = setInterval(updateTotal, 1000);
 
     return () => clearInterval(interval);
-  }, [getTotalVendas]);
+  }, [getVendasPorMes]);
 
   // Force re-render when config changes
   useEffect(() => {

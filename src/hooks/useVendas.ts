@@ -13,17 +13,23 @@ export function useVendas() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  console.log('🔄 useVendas hook inicializado')
+
   const fetchVendas = async () => {
     try {
+      console.log('🔍 Iniciando fetchVendas...')
       setLoading(true)
       const { data, error } = await supabase
         .from('vendas')
         .select('*')
         .order('data_fechamento', { ascending: false })
 
+      console.log('📊 Resposta do Supabase:', { data, error, count: data?.length })
       if (error) throw error
       setVendas(data || [])
+      console.log('✅ Vendas carregadas:', data?.length || 0)
     } catch (err) {
+      console.error('❌ Erro ao carregar vendas:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar vendas')
     } finally {
       setLoading(false)
@@ -95,7 +101,9 @@ export function useVendas() {
   }
 
   const getTotalVendas = () => {
-    return vendas.reduce((total, venda) => total + venda.valor, 0)
+    const total = vendas.reduce((total, venda) => total + venda.valor, 0)
+    console.log('💰 getTotalVendas chamado:', { vendasCount: vendas.length, total })
+    return total
   }
 
   const getVendasPorMes = (mes: number, ano: number) => {

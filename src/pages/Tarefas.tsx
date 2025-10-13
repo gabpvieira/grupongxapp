@@ -1,1759 +1,1944 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { useTarefas, type Tarefa } from "@/hooks/useTarefas";
-import { useVendedores } from "@/hooks/useVendedores";
-import type { Database } from "@/lib/supabase";
-import { 
-  CheckSquare, 
-  Play, 
-  Pause, 
-  MoreVertical, 
-  Plus, 
-  Calendar as CalendarIcon,
-  List,
-  LayoutGrid,
+import React, { useState, useEffect } from 'react'
+import { useTarefas, type Tarefa } from '@/hooks/useTarefas'
+import { useVendedores } from '@/hooks/useVendedores'
+import { useToast } from '@/hooks/use-toast'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import {
+  useSortable,
+} from '@dnd-kit/sortable'
+import {
+  useDroppable,
+} from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
+import {
+  Activity,
+  Calendar,
   Clock,
-  Flag,
-  Trash2,
-  Edit3,
-  Save,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Target,
-  Timer,
+  Plus,
+  Search,
+  Filter,
+  MoreHorizontal,
+  Play,
+  Pause,
   CheckCircle2,
+  CheckSquare,
   Circle,
   AlertCircle,
-  Bell
-} from "lucide-react";
+  AlertTriangle,
+  Flag,
+  User,
+  CalendarDays,
+  List,
+  Kanban,
+  Edit3,
+  Trash2,
+  GripVertical,
+  Bell,
+  Timer,
+  Target,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Eye,
+  Lightbulb
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Toast } from '@/components/ui/toast'
+import { DatePicker } from '@/components/ui/date-picker'
+import { TimeInput } from '@/components/ui/time-input'
+import { ReminderSelect } from '@/components/ui/reminder-select'
+import { format } from "date-fns"
+import { ptBR } from "date-fns/locale"
 
-// Tipos de dados do Supabase
-type ChecklistItem = Database['public']['Tables']['tarefa_checklist']['Row'];
+type ViewMode = 'kanban' | 'list' | 'calendar'
+type FilterStatus = 'all' | 'a-fazer' | 'em-andamento' | 'concluido'
+type FilterPriority = 'all' | 'baixa' | 'media' | 'alta'
 
-type ViewMode = 'kanban' | 'lista' | 'calendario';
+// Função para formatar data ISO para formato brasileiro
+function formatDateToBR(isoDate: string): string {
+  if (!isoDate) return ""
+  const date = new Date(isoDate + "T00:00:00")
+  return format(date, "dd/MM/yyyy", { locale: ptBR })
+}
 
-const Tarefas: React.FC = () => {
-  const { 
-    tarefas, 
-    loading: tarefasLoading, 
-    error: tarefasError,
+interface TaskModalProps {
+  tarefa: Tarefa | null
+  isOpen: boolean
+  onClose: () => void
+  onSave: (tarefa: Tarefa) => void
+}
+
+interface CreateTaskModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onSave: (tarefa: any) => void
+}
+
+const priorityColors = {
+  baixa: 'bg-green-500/10 text-green-400 border-green-500/20',
+  media: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+  alta: 'bg-red-500/10 text-red-400 border-red-500/20'
+}
+
+const statusColors = {
+  'a-fazer': 'bg-slate-700/50 text-slate-300 border-slate-600/50',
+  'em-andamento': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  'concluido': 'bg-green-500/10 text-green-400 border-green-500/20'
+}
+
+function TaskModal({ tarefa, isOpen, onClose, onSave }: TaskModalProps) {
+  const [editedTarefa, setEditedTarefa] = useState<Tarefa | null>(null)
+  const [newChecklistItem, setNewChecklistItem] = useState('')
+  const { vendedores } = useVendedores()
+
+  useEffect(() => {
+    if (tarefa) {
+      setEditedTarefa({ ...tarefa })
+    }
+  }, [tarefa])
+
+  if (!editedTarefa) return null
+
+  const handleSave = () => {
+    onSave(editedTarefa)
+    onClose()
+  }
+
+  const addChecklistItem = () => {
+    if (newChecklistItem.trim()) {
+      const newItem = {
+        id: Date.now().toString(),
+        tarefa_id: editedTarefa.id,
+        texto: newChecklistItem.trim(),
+        text: newChecklistItem.trim(),
+        concluido: false,
+        done: false,
+        ordem: (editedTarefa.checklist || []).length,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      setEditedTarefa({
+        ...editedTarefa,
+        checklist: [...(editedTarefa.checklist || []), newItem]
+      })
+      setNewChecklistItem('')
+    }
+  }
+
+  const toggleChecklistItem = (index: number) => {
+    const updatedChecklist = [...(editedTarefa.checklist || [])]
+    updatedChecklist[index] = {
+      ...updatedChecklist[index],
+      done: !updatedChecklist[index].done,
+      concluido: !updatedChecklist[index].concluido
+    }
+    setEditedTarefa({
+      ...editedTarefa,
+      checklist: updatedChecklist
+    })
+  }
+
+  const removeChecklistItem = (index: number) => {
+    const checklist = editedTarefa.checklist || []
+    const updatedChecklist = checklist.filter((_, i) => i !== index)
+    setEditedTarefa({
+      ...editedTarefa,
+      checklist: updatedChecklist
+    })
+  }
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    return `${hours}h ${minutes}m`
+  }
+
+  // Verificação de segurança para checklist
+  const checklist = editedTarefa.checklist || []
+  const completedChecklist = checklist.filter(item => item.done || item.concluido).length
+  const totalChecklist = checklist.length
+  const checklistProgress = totalChecklist > 0 ? (completedChecklist / totalChecklist) * 100 : 0
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[95vh] overflow-hidden flex flex-col backdrop-blur-sm border-slate-700/50" style={{ backgroundColor: '#020817' }}>
+        <DialogHeader className="pb-4 border-b border-slate-700/50">
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-3 text-xl text-slate-200">
+              <div className="p-2 bg-[#8bdb00]/10 rounded-lg">
+                <Edit3 className="h-5 w-5 text-[#8bdb00]" />
+              </div>
+              Editar Tarefa
+            </DialogTitle>
+            <div className="flex items-center gap-2">
+              {editedTarefa.tempo_rastreado > 0 && (
+                <Badge variant="outline" className="gap-1">
+                  <Timer className="h-3 w-3" />
+                  {formatTime(editedTarefa.tempo_rastreado)}
+                </Badge>
+              )}
+              <Badge variant="outline" className={priorityColors[editedTarefa.prioridade]}>
+                <Flag className="h-3 w-3 mr-1" />
+                {editedTarefa.prioridade}
+              </Badge>
+            </div>
+          </div>
+        </DialogHeader>
+        
+        <div className="flex-1 overflow-y-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+            {/* Coluna Principal */}
+            <div className="lg:col-span-2 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="titulo" className="text-sm font-medium text-slate-200">Título</Label>
+                  <Input
+                    id="titulo"
+                    value={editedTarefa.titulo}
+                    onChange={(e) => setEditedTarefa({ ...editedTarefa, titulo: e.target.value })}
+                    placeholder="Digite o título da tarefa"
+                    className="text-lg font-medium bg-slate-700/50 border-slate-600/50 text-slate-200 placeholder:text-slate-400 focus:border-[#8bdb00]/50 focus:ring-[#8bdb00]/20"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="descricao" className="text-sm font-medium text-slate-200">Descrição</Label>
+                  <Textarea
+                    id="descricao"
+                    value={editedTarefa.descricao || ''}
+                    onChange={(e) => setEditedTarefa({ ...editedTarefa, descricao: e.target.value })}
+                    placeholder="Digite a descrição da tarefa"
+                    rows={4}
+                    className="resize-none bg-slate-700/50 border-slate-600/50 text-slate-200 placeholder:text-slate-400 focus:border-[#8bdb00]/50 focus:ring-[#8bdb00]/20"
+                  />
+                </div>
+              </div>
+
+              {/* Checklist Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="h-5 w-5 text-[#8bdb00]" />
+                    <Label className="text-base font-medium text-slate-200">Checklist</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="gap-1 bg-slate-700/50 text-slate-300 border-slate-600/50">
+                      {completedChecklist} / {totalChecklist}
+                    </Badge>
+                    {totalChecklist > 0 && (
+                      <div className="w-16 bg-slate-700/50 rounded-full h-2">
+                        <div
+                          className="bg-[#8bdb00] h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${checklistProgress}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {(editedTarefa.checklist || []).map((item, index) => (
+                    <div key={index} className="flex items-center gap-3 p-3 bg-slate-700/30 rounded-lg hover:bg-slate-700/50 transition-colors border border-slate-600/50">
+                      <Checkbox
+                        checked={item.done || item.concluido}
+                        onCheckedChange={() => toggleChecklistItem(index)}
+                      />
+                      <span className={`flex-1 text-slate-200 ${item.done || item.concluido ? 'line-through text-slate-400' : ''}`}>
+                        {item.text || item.texto}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeChecklistItem(index)}
+                        className="h-8 w-8 p-0 text-slate-400 hover:text-red-400"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <Input
+                    value={newChecklistItem}
+                    onChange={(e) => setNewChecklistItem(e.target.value)}
+                    placeholder="Adicionar item ao checklist"
+                    onKeyPress={(e) => e.key === 'Enter' && addChecklistItem()}
+                    className="flex-1 bg-slate-700/50 border-slate-600/50 text-slate-200 placeholder:text-slate-400 focus:border-[#8bdb00]/50 focus:ring-[#8bdb00]/20"
+                  />
+                  <Button onClick={addChecklistItem} size="sm" className="px-3 bg-[#8bdb00] text-slate-900 hover:bg-[#7bc600]">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Sidebar */}
+            <div className="space-y-6">
+              <div className="space-y-4">
+                <h3 className="font-medium text-sm text-slate-400 uppercase tracking-wide">Detalhes</h3>
+                
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                      <Activity className="h-4 w-4" />
+                      Status
+                    </Label>
+                    <Select
+                      value={editedTarefa.status}
+                      onValueChange={(value: 'a-fazer' | 'em-andamento' | 'concluido') =>
+                        setEditedTarefa({ ...editedTarefa, status: value })
+                      }
+                    >
+                      <SelectTrigger className="bg-slate-700/50 border-slate-600/50 text-slate-200">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700/50">
+                        <SelectItem value="a-fazer" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-slate-400" />
+                            A Fazer
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="em-andamento" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-blue-400" />
+                            Em Progresso
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="concluido" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-400" />
+                            Concluído
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                      <Flag className="h-4 w-4" />
+                      Prioridade
+                    </Label>
+                    <Select
+                      value={editedTarefa.prioridade}
+                      onValueChange={(value: 'baixa' | 'media' | 'alta') =>
+                        setEditedTarefa({ ...editedTarefa, prioridade: value })
+                      }
+                    >
+                      <SelectTrigger className="bg-slate-700/50 border-slate-600/50 text-slate-200">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700/50">
+                        <SelectItem value="baixa" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <Flag className="h-3 w-3 text-green-400" />
+                            Baixa
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="media" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <Flag className="h-3 w-3 text-yellow-400" />
+                            Média
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="alta" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <Flag className="h-3 w-3 text-red-400" />
+                            Alta
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                      <CalendarDays className="h-4 w-4" />
+                      Data de Vencimento
+                    </Label>
+                    <DatePicker
+                      value={editedTarefa.data_vencimento || ''}
+                      onChange={(value) => setEditedTarefa({ ...editedTarefa, data_vencimento: value })}
+                      placeholder="Selecione uma data"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                      <User className="h-4 w-4" />
+                      Responsável
+                    </Label>
+                    <Select
+                      value={editedTarefa.responsavel_id || 'none'}
+                      onValueChange={(value) =>
+                        setEditedTarefa({ ...editedTarefa, responsavel_id: value === 'none' ? null : value })
+                      }
+                    >
+                      <SelectTrigger className="bg-slate-700/50 border-slate-600/50 text-slate-200">
+                        <SelectValue placeholder="Selecione um responsável" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700/50">
+                        <SelectItem value="none" className="text-slate-200 focus:bg-slate-700/50">Nenhum</SelectItem>
+                        {vendedores.map((vendedor) => (
+                          <SelectItem key={vendedor.id} value={vendedor.id} className="text-slate-200 focus:bg-slate-700/50">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 bg-[#8bdb00]/10 rounded-full flex items-center justify-center">
+                                <span className="text-xs font-medium text-[#8bdb00]">
+                                  {vendedor.nome.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                              {vendedor.nome}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                        <Clock className="h-4 w-4" />
+                        Horário do Lembrete
+                      </Label>
+                      <TimeInput
+                        value={editedTarefa.hora_lembrete || ''}
+                        onChange={(value) => setEditedTarefa({ ...editedTarefa, hora_lembrete: value })}
+                        placeholder="HH:mm"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <ReminderSelect
+                        value={editedTarefa.reminder || ''}
+                        onChange={(value) => setEditedTarefa({ ...editedTarefa, reminder: value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 p-6 border-t border-slate-700/50 bg-slate-800/30">
+          <Button variant="outline" onClick={onClose} className="bg-slate-700/50 border-slate-600/50 text-slate-200 hover:bg-slate-600/50 hover:text-slate-100">
+            Cancelar
+          </Button>
+          <Button onClick={handleSave} className="min-w-[120px] bg-[#8bdb00] text-slate-900 hover:bg-[#7bc600]">
+            Salvar Alterações
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CreateTaskModal({ isOpen, onClose, onSave }: CreateTaskModalProps) {
+  const [newTarefa, setNewTarefa] = useState({
+    titulo: '',
+    descricao: '',
+    prioridade: 'media' as 'baixa' | 'media' | 'alta',
+    data_vencimento: '',
+    responsavel_id: '',
+    hora_lembrete: '',
+    reminder: '',
+    status: 'a-fazer' as 'a-fazer' | 'em-andamento' | 'concluido',
+    tempo_rastreado: 0,
+    esta_executando: false,
+    inicio_execucao: null,
+    lembrete_enviado: false
+  })
+  const { vendedores } = useVendedores()
+
+  const handleSave = () => {
+    if (!newTarefa.titulo.trim()) return
+    
+    onSave({
+      ...newTarefa,
+      responsavel_id: newTarefa.responsavel_id || null,
+      data_vencimento: newTarefa.data_vencimento || null,
+      hora_lembrete: newTarefa.hora_lembrete || null,
+      descricao: newTarefa.descricao || null
+    })
+    
+    setNewTarefa({
+      titulo: '',
+      descricao: '',
+      prioridade: 'media',
+      data_vencimento: '',
+      responsavel_id: '',
+      hora_lembrete: '',
+      reminder: '',
+      status: 'a-fazer',
+      tempo_rastreado: 0,
+      esta_executando: false,
+      inicio_execucao: null,
+      lembrete_enviado: false
+    })
+    onClose()
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col bg-slate-800/95 backdrop-blur-sm border-slate-700/50">
+        <DialogHeader className="pb-4 border-b border-slate-700/50">
+          <DialogTitle className="flex items-center gap-3 text-xl text-slate-200">
+            <div className="p-2 bg-[#8bdb00]/10 rounded-lg">
+              <Plus className="h-5 w-5 text-[#8bdb00]" />
+            </div>
+            Nova Tarefa
+          </DialogTitle>
+          <p className="text-sm text-slate-400 mt-1">
+            Crie uma nova tarefa e organize seu trabalho
+          </p>
+        </DialogHeader>
+        
+        <div className="flex-1 overflow-y-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+            {/* Coluna Principal */}
+            <div className="lg:col-span-2 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="new-titulo" className="text-sm font-medium text-slate-200">Título *</Label>
+                  <Input
+                    id="new-titulo"
+                    value={newTarefa.titulo}
+                    onChange={(e) => setNewTarefa({ ...newTarefa, titulo: e.target.value })}
+                    placeholder="Digite o título da tarefa"
+                    className="text-lg font-medium bg-slate-700/50 border-slate-600/50 text-slate-200 placeholder:text-slate-400 focus:border-[#8bdb00]/50 focus:ring-[#8bdb00]/20"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="new-descricao" className="text-sm font-medium text-slate-200">Descrição</Label>
+                  <Textarea
+                    id="new-descricao"
+                    value={newTarefa.descricao}
+                    onChange={(e) => setNewTarefa({ ...newTarefa, descricao: e.target.value })}
+                    placeholder="Digite a descrição da tarefa"
+                    rows={6}
+                    className="resize-none bg-slate-700/50 border-slate-600/50 text-slate-200 placeholder:text-slate-400 focus:border-[#8bdb00]/50 focus:ring-[#8bdb00]/20"
+                  />
+                </div>
+              </div>
+
+              {/* Preview da Tarefa */}
+              <div className="p-4 bg-slate-700/30 rounded-lg border-2 border-dashed border-slate-600/50">
+                <h4 className="text-sm font-medium text-slate-400 mb-3 flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  Preview da Tarefa
+                </h4>
+                <div className="space-y-2">
+                  <h5 className="font-medium text-lg text-slate-200">
+                    {newTarefa.titulo || 'Título da tarefa'}
+                  </h5>
+                  {newTarefa.descricao && (
+                    <p className="text-sm text-slate-400">
+                      {newTarefa.descricao}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 mt-3">
+                    <Badge variant="outline" className={priorityColors[newTarefa.prioridade]}>
+                      <Flag className="h-3 w-3 mr-1" />
+                      {newTarefa.prioridade}
+                    </Badge>
+                    {newTarefa.data_vencimento && (
+                      <Badge variant="outline">
+                        <CalendarDays className="h-3 w-3 mr-1" />
+                        {formatDateToBR(newTarefa.data_vencimento)}
+                      </Badge>
+                    )}
+                    {newTarefa.responsavel_id && (
+                      <Badge variant="outline">
+                        <User className="h-3 w-3 mr-1" />
+                        {vendedores.find(v => v.id === newTarefa.responsavel_id)?.nome}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sidebar */}
+            <div className="space-y-6">
+              <div className="space-y-4">
+                <h3 className="font-medium text-sm text-slate-400 uppercase tracking-wide">Configurações</h3>
+                
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                      <Flag className="h-4 w-4" />
+                      Prioridade
+                    </Label>
+                    <Select
+                      value={newTarefa.prioridade}
+                      onValueChange={(value: 'baixa' | 'media' | 'alta') =>
+                        setNewTarefa({ ...newTarefa, prioridade: value })
+                      }
+                    >
+                      <SelectTrigger className="bg-slate-700/50 border-slate-600/50 text-slate-200">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700/50">
+                        <SelectItem value="baixa" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <Flag className="h-3 w-3 text-green-400" />
+                            Baixa
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="media" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <Flag className="h-3 w-3 text-yellow-400" />
+                            Média
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="alta" className="text-slate-200 focus:bg-slate-700/50">
+                          <div className="flex items-center gap-2">
+                            <Flag className="h-3 w-3 text-red-400" />
+                            Alta
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                      <CalendarDays className="h-4 w-4" />
+                      Data de Vencimento
+                    </Label>
+                    <DatePicker
+                      value={newTarefa.data_vencimento}
+                      onChange={(value) => setNewTarefa({ ...newTarefa, data_vencimento: value })}
+                      placeholder="Selecione uma data"
+                      minDate={new Date()}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                      <User className="h-4 w-4" />
+                      Responsável
+                    </Label>
+                    <Select
+                      value={newTarefa.responsavel_id || 'none'}
+                      onValueChange={(value) =>
+                        setNewTarefa({ ...newTarefa, responsavel_id: value === 'none' ? '' : value })
+                      }
+                    >
+                      <SelectTrigger className="bg-slate-700/50 border-slate-600/50 text-slate-200">
+                        <SelectValue placeholder="Selecione um responsável" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700/50">
+                        <SelectItem value="none" className="text-slate-200 focus:bg-slate-700/50">Nenhum</SelectItem>
+                        {vendedores.map((vendedor) => (
+                          <SelectItem key={vendedor.id} value={vendedor.id} className="text-slate-200 focus:bg-slate-700/50">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 bg-[#8bdb00]/10 rounded-full flex items-center justify-center">
+                                <span className="text-xs font-medium text-[#8bdb00]">
+                                  {vendedor.nome.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                              {vendedor.nome}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium flex items-center gap-2 text-slate-200">
+                        <Clock className="h-4 w-4" />
+                        Horário do Lembrete
+                      </Label>
+                      <TimeInput
+                        value={newTarefa.hora_lembrete}
+                        onChange={(value) => setNewTarefa({ ...newTarefa, hora_lembrete: value })}
+                        placeholder="HH:mm"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <ReminderSelect
+                        value={newTarefa.reminder || ''}
+                        onChange={(value) => setNewTarefa({ ...newTarefa, reminder: value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dicas */}
+                <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                  <h4 className="text-sm font-medium text-blue-400 mb-2 flex items-center gap-2">
+                    <Lightbulb className="h-4 w-4" />
+                    Dicas
+                  </h4>
+                  <ul className="text-xs text-blue-300 space-y-1">
+                    <li>• Use títulos descritivos e claros</li>
+                    <li>• Defina prazos realistas</li>
+                    <li>• Atribua responsáveis quando necessário</li>
+                    <li>• Configure lembretes para tarefas importantes</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 p-6 border-t border-slate-700/50 bg-slate-800/30">
+          <Button variant="outline" onClick={onClose} className="bg-slate-700/50 border-slate-600/50 text-slate-200 hover:bg-slate-600/50 hover:text-slate-100">
+            Cancelar
+          </Button>
+          <Button 
+            onClick={handleSave} 
+            className="min-w-[120px] bg-[#8bdb00] text-slate-900 hover:bg-[#7bc600] disabled:bg-slate-600 disabled:text-slate-400"
+            disabled={!newTarefa.titulo.trim()}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Criar Tarefa
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function SortableTaskCard({ tarefa, onEdit, onDelete, onToggleTimer }: {
+  tarefa: Tarefa
+  onEdit: (tarefa: Tarefa) => void
+  onDelete: (id: string) => void
+  onToggleTimer: (id: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: tarefa.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  const { vendedores } = useVendedores()
+  const responsavel = vendedores.find(v => v.id === tarefa.responsavel_id)
+  
+  // Verificação de segurança para checklist
+  const checklist = tarefa.checklist || []
+  const completedChecklist = checklist.filter(item => item.done || item.concluido).length
+  const totalChecklist = checklist.length
+  const checklistProgress = totalChecklist > 0 ? (completedChecklist / totalChecklist) * 100 : 0
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    return `${hours}h ${minutes}m`
+  }
+
+  const isOverdue = tarefa.data_vencimento && 
+    new Date(tarefa.data_vencimento) < new Date() && 
+    tarefa.status !== 'concluido'
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={`group transition-all duration-200 cursor-pointer bg-slate-800/60 backdrop-blur-sm border-slate-700/50 hover:border-slate-600/50 hover:shadow-xl ${
+        isDragging ? 'shadow-xl rotate-2 scale-105 opacity-70 z-50' : ''
+      }`}
+      onClick={(e) => {
+        // Evita abrir o card quando clica no dropdown, botões ou drag handle
+        const target = e.target as HTMLElement
+        if (!target.closest('[data-radix-collection-item], button, [data-dnd-kit-drag-handle]') && 
+            !target.closest('[class*="cursor-grab"]') &&
+            !isDragging) {
+          onEdit(tarefa);
+        }
+      }}
+    >
+      <CardContent className="p-2">
+        <div className="flex items-start gap-2">
+          <div
+            {...attributes}
+            {...listeners}
+            data-dnd-kit-drag-handle
+            className="mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing hover:text-[#8bdb00] touch-none"
+            style={{ touchAction: 'none' }}
+          >
+            <GripVertical className="h-3.5 w-3.5 text-slate-400 hover:text-[#8bdb00]" />
+          </div>
+              
+              <div className="flex-1 space-y-1.5">
+                <div className="flex items-start justify-between">
+                  <h3 className="font-medium text-sm leading-tight line-clamp-2 text-slate-200">
+                    {tarefa.titulo}
+                  </h3>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 w-8 p-0 opacity-60 group-hover:opacity-100 hover:bg-slate-700/50 text-slate-400 hover:text-slate-200"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48 bg-slate-800/95 backdrop-blur-sm border-slate-700/50">
+                      <DropdownMenuItem onClick={() => onEdit(tarefa)} className="cursor-pointer text-slate-200 hover:bg-slate-700/50 focus:bg-slate-700/50">
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        Editar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => onDelete(tarefa.id)}
+                        className="text-red-400 cursor-pointer hover:bg-red-500/10 focus:bg-red-500/10 hover:text-red-300 focus:text-red-300"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Excluir
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {tarefa.descricao && (
+                  <p className="text-xs text-slate-400 line-clamp-1">
+                    {tarefa.descricao}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Badge variant="outline" className={`text-xs px-1.5 py-0.5 border-current ${priorityColors[tarefa.prioridade]}`}>
+                    <Flag className="h-2.5 w-2.5 mr-1" />
+                    {tarefa.prioridade}
+                  </Badge>
+                  
+                  {isOverdue && (
+                    <Badge variant="destructive" className="text-xs px-1.5 py-0.5 bg-red-500 text-white dark:bg-red-600">
+                      <AlertCircle className="h-2.5 w-2.5 mr-1" />
+                      Atrasada
+                    </Badge>
+                  )}
+                </div>
+
+                {totalChecklist > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Progresso</span>
+                      <span className="font-medium text-slate-200">{completedChecklist}/{totalChecklist}</span>
+                    </div>
+                    <div className="w-full bg-slate-700/50 rounded-full h-1.5">
+                      <div
+                        className="bg-[#8bdb00] h-1.5 rounded-full transition-all duration-300"
+                        style={{ width: `${checklistProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-slate-400">
+                    {tarefa.data_vencimento && (
+                      <div className="flex items-center gap-1 hover:text-slate-200 transition-colors">
+                        <CalendarDays className="h-3 w-3" />
+                        <span>{formatDateToBR(tarefa.data_vencimento)}</span>
+                      </div>
+                    )}
+                    
+                    {responsavel && (
+                      <div className="flex items-center gap-1 hover:text-slate-200 transition-colors">
+                        <User className="h-3 w-3" />
+                        <span>{responsavel.nome.split(' ')[0]}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {tarefa.tempo_rastreado > 0 && (
+                      <div className="flex items-center gap-1 text-slate-400">
+                        <Timer className="h-3 w-3" />
+                        <span className="font-medium">{formatTime(tarefa.tempo_rastreado)}</span>
+                      </div>
+                    )}
+                    
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 hover:bg-slate-700/50 text-slate-400 hover:text-slate-200"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleTimer(tarefa.id);
+                      }}
+                    >
+                      {tarefa.esta_executando ? (
+                        <Pause className="h-3 w-3 text-red-400" />
+                      ) : (
+                        <Play className="h-3 w-3 text-[#8bdb00]" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+  )
+}
+
+function DroppableColumn({ 
+  id, 
+  children, 
+  className 
+}: { 
+  id: string
+  children: React.ReactNode
+  className?: string 
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`${className} ${isOver ? 'bg-muted/50 rounded-lg ring-2 ring-primary/20' : ''} transition-all duration-200`}
+      style={{ minHeight: '200px' }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function KanbanView({ tarefas, onEdit, onDelete, onToggleTimer, onDragEnd }: {
+  tarefas: Tarefa[]
+  onEdit: (tarefa: Tarefa) => void
+  onDelete: (id: string) => void
+  onToggleTimer: (id: string) => void
+  onDragEnd: (event: DragEndEvent) => void
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  const columns = [
+    {
+      id: 'a-fazer',
+      title: 'A Fazer',
+      color: 'border-slate-700/50 bg-slate-800/60 backdrop-blur-sm',
+      headerColor: 'text-slate-200'
+    },
+    {
+      id: 'em-andamento',
+      title: 'Em Progresso',
+      color: 'border-blue-500/30 bg-slate-800/60 backdrop-blur-sm',
+      headerColor: 'text-blue-400'
+    },
+    {
+      id: 'concluido',
+      title: 'Concluído',
+      color: 'border-green-500/30 bg-slate-800/60 backdrop-blur-sm',
+      headerColor: 'text-green-400'
+    }
+  ]
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={onDragEnd}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {columns.map((column) => {
+          const columnTasks = tarefas.filter(t => t.status === column.id)
+          
+          return (
+            <div key={column.id} className={`rounded-lg border-2 ${column.color} p-4`}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`font-semibold ${column.headerColor}`}>
+                  {column.title}
+                </h3>
+                <Badge variant="secondary" className="text-xs bg-slate-700/50 text-slate-300 border-slate-600/50">
+                  {columnTasks.length}
+                </Badge>
+              </div>
+              
+              <DroppableColumn id={column.id} className="space-y-3 min-h-[200px]">
+                <SortableContext 
+                  items={columnTasks.map(t => t.id)} 
+                  strategy={verticalListSortingStrategy}
+                >
+                  {columnTasks.map((tarefa) => (
+                    <SortableTaskCard
+                      key={tarefa.id}
+                      tarefa={tarefa}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      onToggleTimer={onToggleTimer}
+                    />
+                  ))}
+                  
+                  {columnTasks.length === 0 && (
+                    <div className="text-center py-8 text-slate-400">
+                      <Target className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">Nenhuma tarefa</p>
+                    </div>
+                  )}
+                </SortableContext>
+              </DroppableColumn>
+            </div>
+          )
+        })}
+      </div>
+    </DndContext>
+  )
+}
+
+function ListView({ tarefas, onEdit, onDelete, onToggleTimer }: {
+  tarefas: Tarefa[]
+  onEdit: (tarefa: Tarefa) => void
+  onDelete: (id: string) => void
+  onToggleTimer: (id: string) => void
+}) {
+  const { vendedores } = useVendedores()
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    return `${hours}h ${minutes}m`
+  }
+
+  return (
+    <div className="space-y-2">
+      {tarefas.map((tarefa) => {
+        const responsavel = vendedores.find(v => v.id === tarefa.responsavel_id)
+        // Verificação de segurança para checklist
+        const checklist = tarefa.checklist || []
+        const completedChecklist = checklist.filter(item => item.done || item.concluido).length
+        const totalChecklist = checklist.length
+        const isOverdue = tarefa.data_vencimento && 
+          new Date(tarefa.data_vencimento) < new Date() && 
+          tarefa.status !== 'concluido'
+
+        return (
+          <Card 
+            key={tarefa.id} 
+            className="group transition-all duration-200 cursor-pointer bg-slate-800/60 backdrop-blur-sm border-slate-700/50 hover:border-slate-600/50 hover:shadow-xl"
+            onClick={(e) => {
+              // Evita abrir o card quando clica nos botões
+              const target = e.target as HTMLElement
+              if (!target.closest('button')) {
+                onEdit(tarefa);
+              }
+            }}
+          >
+            <CardContent className="p-3">
+              <div className="flex items-center justify-between gap-4">
+                {/* Lado esquerdo - Título e descrição */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-semibold text-base truncate text-slate-200">{tarefa.titulo}</h3>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Badge 
+                        variant="outline" 
+                        className={`${priorityColors[tarefa.prioridade]} text-xs`}
+                      >
+                        <Flag className="h-3 w-3 mr-1" />
+                        {tarefa.prioridade}
+                      </Badge>
+                      <Badge 
+                        variant="outline" 
+                        className={`${statusColors[tarefa.status]} text-xs`}
+                      >
+                        {tarefa.status === 'a-fazer' ? 'A Fazer' : 
+                         tarefa.status === 'em-andamento' ? 'Em Progresso' : 'Concluído'}
+                      </Badge>
+                      {isOverdue && (
+                        <Badge variant="destructive" className="text-xs bg-red-500/10 text-red-400 border-red-500/20">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          Atrasada
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Description */}
+                  {tarefa.descricao && (
+                    <p className="text-sm text-slate-400 line-clamp-1">
+                      {tarefa.descricao}
+                    </p>
+                  )}
+                  
+                  {/* Checklist Progress - mais compacto */}
+                  {totalChecklist > 0 && (
+                    <div className="mt-1">
+                      <div className="flex items-center gap-2">
+                        <CheckSquare className="h-3 w-3 text-slate-400" />
+                        <span className="text-xs text-slate-400">
+                          {completedChecklist}/{totalChecklist} itens
+                        </span>
+                        <div className="flex-1 bg-slate-700/50 rounded-full h-1.5 max-w-20">
+                          <div 
+                            className="bg-[#8bdb00] h-1.5 rounded-full transition-all duration-300" 
+                            style={{ 
+                              width: `${totalChecklist > 0 ? (completedChecklist / totalChecklist) * 100 : 0}%` 
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Lado direito - Meta informações e ações */}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {/* Meta Information - compacta */}
+                  <div className="flex items-center gap-3 text-xs text-slate-400">
+                    {tarefa.data_vencimento && (
+                      <div className="flex items-center gap-1">
+                        <CalendarDays className="h-3 w-3" />
+                        <span>{formatDateToBR(tarefa.data_vencimento)}</span>
+                      </div>
+                    )}
+                    
+                    {responsavel && (
+                      <div className="flex items-center gap-1">
+                        <div className="w-4 h-4 bg-[#8bdb00]/10 rounded-full flex items-center justify-center">
+                          <span className="text-xs font-medium text-[#8bdb00]">
+                            {responsavel.nome.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <span className="max-w-20 truncate">{responsavel.nome}</span>
+                      </div>
+                    )}
+
+                    {tarefa.hora_lembrete && (
+                      <div className="flex items-center gap-1">
+                        <Bell className="h-3 w-3" />
+                        <span>{tarefa.hora_lembrete}</span>
+                      </div>
+                    )}
+                    
+                    {tarefa.tempo_rastreado > 0 && (
+                      <div className="flex items-center gap-1">
+                        <Timer className="h-3 w-3" />
+                        <span>{formatTime(tarefa.tempo_rastreado)}</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onToggleTimer(tarefa.id)
+                      }}
+                      className={`h-7 w-7 p-0 ${
+                        tarefa.esta_executando 
+                          ? 'bg-[#8bdb00]/10 text-[#8bdb00] hover:bg-[#8bdb00]/20' 
+                          : 'hover:bg-slate-700/50 text-slate-400 hover:text-slate-200'
+                      }`}
+                      title={tarefa.esta_executando ? 'Pausar timer' : 'Iniciar timer'}
+                    >
+                      {tarefa.esta_executando ? <Pause className="h-3 w-3 text-red-400" /> : <Play className="h-3 w-3 text-[#8bdb00]" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onEdit(tarefa)
+                      }}
+                      className="h-7 w-7 p-0 hover:bg-slate-700/50 text-slate-400 hover:text-slate-200"
+                      title="Editar tarefa"
+                    >
+                      <Edit3 className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete(tarefa.id)
+                      }}
+                      className="h-7 w-7 p-0 hover:bg-red-500/10 hover:text-red-400 text-slate-400"
+                      title="Excluir tarefa"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timer Active Indicator - mais compacto */}
+              {tarefa.esta_executando && (
+                <div className="mt-2 p-1.5 bg-[#8bdb00]/10 rounded border border-[#8bdb00]/20">
+                  <div className="flex items-center gap-2 text-xs text-[#8bdb00]">
+                    <div className="w-1.5 h-1.5 bg-[#8bdb00] rounded-full animate-pulse" />
+                    <span className="font-medium">Timer ativo</span>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )
+      })}
+      
+      {tarefas.length === 0 && (
+        <div className="text-center py-16">
+          <div className="mx-auto w-24 h-24 bg-slate-700/30 rounded-full flex items-center justify-center mb-4">
+            <List className="h-12 w-12 text-slate-400" />
+          </div>
+          <h3 className="text-lg font-medium text-slate-200 mb-2">
+            Nenhuma tarefa encontrada
+          </h3>
+          <p className="text-sm text-slate-400 mb-4">
+            Crie sua primeira tarefa para começar a organizar seu trabalho
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CalendarView({ tarefas }: { tarefas: Tarefa[] }) {
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const daysInMonth = lastDay.getDate()
+    const startingDayOfWeek = firstDay.getDay()
+    
+    const days = []
+    
+    // Dias do mês anterior
+    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+      const prevDate = new Date(year, month, -i)
+      days.push({ date: prevDate, isCurrentMonth: false })
+    }
+    
+    // Dias do mês atual
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push({ date: new Date(year, month, day), isCurrentMonth: true })
+    }
+    
+    // Dias do próximo mês para completar a grade
+    const remainingDays = 42 - days.length
+    for (let day = 1; day <= remainingDays; day++) {
+      days.push({ date: new Date(year, month + 1, day), isCurrentMonth: false })
+    }
+    
+    return days
+  }
+  
+  const getTasksForDate = (date: Date) => {
+    const dateStr = date.toISOString().split('T')[0]
+    const tasksForDate = tarefas.filter(tarefa => tarefa.data_vencimento === dateStr)
+    return tasksForDate
+  }
+  
+  const days = getDaysInMonth(currentDate)
+  const monthNames = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ]
+  
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev)
+      if (direction === 'prev') {
+        newDate.setMonth(prev.getMonth() - 1)
+      } else {
+        newDate.setMonth(prev.getMonth() + 1)
+      }
+      return newDate
+    })
+  }
+
+  const goToToday = () => {
+    const today = new Date()
+    setCurrentDate(today)
+    setSelectedDate(today)
+  }
+
+  const selectedDateTasks = selectedDate ? getTasksForDate(selectedDate) : []
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <h2 className="text-3xl font-bold text-slate-200">
+            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+          </h2>
+          <div className="text-sm text-slate-400">
+            {tarefas.length} {tarefas.length === 1 ? 'tarefa' : 'tarefas'} no mês
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => navigateMonth('prev')}
+            className="h-9 w-9 p-0 bg-slate-800/60 border-slate-700/50 text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 hover:border-slate-600/50"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={goToToday}
+            className="px-3 bg-slate-800/60 border-slate-700/50 text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 hover:border-slate-600/50"
+          >
+            Hoje
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => navigateMonth('next')}
+            className="h-9 w-9 p-0 bg-slate-800/60 border-slate-700/50 text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 hover:border-slate-600/50"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Calendar Grid */}
+        <div className="lg:col-span-3">
+          <Card className="overflow-hidden bg-slate-800/60 backdrop-blur-sm border-slate-700/50">
+            <CardContent className="p-0">
+              {/* Days of Week Header */}
+              <div className="grid grid-cols-7 border-b border-slate-700/50 bg-slate-700/30">
+                {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map(day => (
+                  <div key={day} className="p-3 text-center font-semibold text-sm text-slate-300 border-r border-slate-700/50 last:border-r-0">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              
+              {/* Calendar Days */}
+              <div className="grid grid-cols-7">
+                {days.map((day, index) => {
+                  const dayTasks = getTasksForDate(day.date)
+                  const isToday = day.date.toDateString() === new Date().toDateString()
+                  const isSelected = selectedDate?.toDateString() === day.date.toDateString()
+                  const hasOverdueTasks = dayTasks.some(task => 
+                    new Date(task.data_vencimento!) < new Date() && task.status !== 'concluido'
+                  )
+                  
+                  return (
+                    <div
+                      key={index}
+                      className={`min-h-[120px] p-2 border-r border-b border-slate-700/50 last:border-r-0 cursor-pointer transition-all hover:bg-slate-700/30 ${
+                        day.isCurrentMonth 
+                          ? 'bg-slate-800/40' 
+                          : 'bg-slate-700/20 text-slate-500'
+                      } ${isSelected ? 'bg-[#8bdb00]/10 border-[#8bdb00]/30' : ''}`}
+                      onClick={() => setSelectedDate(day.date)}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-sm font-medium ${
+                          isToday 
+                            ? 'bg-[#8bdb00] text-slate-900 rounded-full w-6 h-6 flex items-center justify-center text-xs' 
+                            : isSelected 
+                              ? 'text-[#8bdb00] font-semibold' 
+                              : day.isCurrentMonth 
+                                ? 'text-slate-200'
+                                : 'text-slate-500'
+                        }`}>
+                          {day.date.getDate()}
+                        </span>
+                        {dayTasks.length > 0 && (
+                          <div className={`text-xs px-1.5 py-0.5 rounded-full ${
+                            hasOverdueTasks 
+                              ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                              : 'bg-[#8bdb00]/10 text-[#8bdb00] border border-[#8bdb00]/20'
+                          }`}>
+                            {dayTasks.length}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="space-y-1">
+                        {dayTasks.slice(0, 2).map(tarefa => {
+                          const isOverdue = tarefa.data_vencimento && 
+                            new Date(tarefa.data_vencimento) < new Date() && 
+                            tarefa.status !== 'concluido'
+                          
+                          return (
+                            <div
+                              key={tarefa.id}
+                              className="text-xs p-1.5 rounded-md truncate bg-slate-800/60 backdrop-blur-sm border border-slate-700/50 text-slate-200 hover:border-slate-600/50 hover:shadow-xl transition-all duration-200"
+                              title={`${tarefa.titulo} - ${tarefa.prioridade} prioridade`}
+                            >
+                              <div className="flex items-center gap-1">
+                                {tarefa.status === 'concluido' && (
+                                  <CheckCircle2 className="h-3 w-3 flex-shrink-0 text-green-400" />
+                                )}
+                                <span className="truncate">{tarefa.titulo}</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {dayTasks.length > 2 && (
+                          <div className="text-xs text-slate-400 text-center py-1">
+                            +{dayTasks.length - 2} mais
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Selected Date Details */}
+        <div className="lg:col-span-1">
+          <Card className="bg-slate-800/60 backdrop-blur-sm border-slate-700/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg text-slate-200">
+                {selectedDate ? (
+                  <>
+                    {selectedDate.getDate()} de {monthNames[selectedDate.getMonth()]}
+                    <div className="text-sm font-normal text-slate-400 mt-1">
+                      {selectedDateTasks.length} {selectedDateTasks.length === 1 ? 'tarefa' : 'tarefas'}
+                    </div>
+                  </>
+                ) : (
+                  'Selecione uma data'
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {selectedDate ? (
+                selectedDateTasks.length > 0 ? (
+                  selectedDateTasks.map(tarefa => {
+                    const isOverdue = tarefa.data_vencimento && 
+                      new Date(tarefa.data_vencimento) < new Date() && 
+                      tarefa.status !== 'concluido'
+                    
+                    return (
+                      <div 
+                        key={tarefa.id} 
+                        className="p-3 rounded-lg bg-slate-800/60 backdrop-blur-sm border border-slate-700/50 hover:border-slate-600/50 hover:shadow-xl transition-all duration-200"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-sm truncate text-slate-200">{tarefa.titulo}</h4>
+                            {tarefa.descricao && (
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                                {tarefa.descricao}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-2 mt-2">
+                              <Badge 
+                                variant="outline" 
+                                className={`text-xs ${priorityColors[tarefa.prioridade]}`}
+                              >
+                                {tarefa.prioridade}
+                              </Badge>
+                              <Badge 
+                                variant="outline" 
+                                className={`text-xs ${statusColors[tarefa.status]}`}
+                              >
+                                {tarefa.status === 'a-fazer' ? 'A Fazer' : 
+                                 tarefa.status === 'em-andamento' ? 'Em Progresso' : 'Concluído'}
+                              </Badge>
+                            </div>
+                          </div>
+                          {tarefa.status === 'concluido' && (
+                            <CheckCircle2 className="h-4 w-4 text-green-400 flex-shrink-0" />
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <div className="text-center py-8">
+                    <Calendar className="h-8 w-8 mx-auto mb-2 text-slate-400" />
+                    <p className="text-sm text-slate-400">
+                      Nenhuma tarefa nesta data
+                    </p>
+                  </div>
+                )
+              ) : (
+                <div className="text-center py-8">
+                  <Calendar className="h-8 w-8 mx-auto mb-2 text-slate-400" />
+                  <p className="text-sm text-slate-400">
+                    Clique em uma data para ver as tarefas
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function Tarefas() {
+  const {
+    tarefas,
+    loading,
+    error,
     addTarefa,
     updateTarefa,
     updateTarefaCompleta,
     deleteTarefa,
     startTimer,
     stopTimer,
-    activeTaskId
-  } = useTarefas();
+    getTarefasPorStatus
+  } = useTarefas()
   
-  const { 
-    vendedores, 
-    loading: vendedoresLoading, 
-    error: vendedoresError 
-  } = useVendedores();
+  console.log('🔍 Total de tarefas carregadas:', tarefas.length)
+  console.log('🔍 Tarefas com data_vencimento:', tarefas.filter(t => t.data_vencimento).length)
+  console.log('🔍 Tarefas:', tarefas.map(t => ({ id: t.id, titulo: t.titulo, data_vencimento: t.data_vencimento })))
+  
 
-  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
-  const [showTaskModal, setShowTaskModal] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Tarefa | null>(null);
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [newTaskStatus, setNewTaskStatus] = useState<Tarefa['status']>('a-fazer');
-  const [showToast, setShowToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const { toast } = useToast()
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
+  const [filterPriority, setFilterPriority] = useState<FilterPriority>('all')
+  const [selectedTask, setSelectedTask] = useState<Tarefa | null>(null)
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
 
-  // Formatação de tempo
-  const formatTime = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+  // Filtrar tarefas
+  const filteredTasks = tarefas.filter(tarefa => {
+    const matchesSearch = tarefa.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (tarefa.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
+    const matchesStatus = filterStatus === 'all' || tarefa.status === filterStatus
+    const matchesPriority = filterPriority === 'all' || tarefa.prioridade === filterPriority
     
-    if (hours > 0) {
-      return `${hours}h ${minutes}min`;
-    } else if (minutes > 0) {
-      return `${minutes}min ${secs}s`;
+    return matchesSearch && matchesStatus && matchesPriority
+  })
+
+  // Estatísticas
+  const stats = {
+    total: tarefas.length,
+    aFazer: getTarefasPorStatus('a-fazer').length,
+    emAndamento: getTarefasPorStatus('em-andamento').length,
+    concluido: getTarefasPorStatus('concluido').length
+  }
+
+  const handleCreateTask = async (newTask: any) => {
+    try {
+      await addTarefa(newTask)
+      toast({
+        title: 'Sucesso',
+        description: 'Tarefa criada com sucesso!'
+      })
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Erro ao criar tarefa',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  const handleEditTask = (tarefa: Tarefa) => {
+    setSelectedTask(tarefa)
+    setIsTaskModalOpen(true)
+  }
+
+  const handleSaveTask = async (tarefa: Tarefa) => {
+    try {
+      await updateTarefaCompleta(tarefa)
+      toast({
+        title: 'Sucesso',
+        description: 'Tarefa atualizada com sucesso!'
+      })
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Erro ao atualizar tarefa',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  const handleDeleteTask = async (id: string) => {
+    try {
+      await deleteTarefa(id)
+      toast({
+        title: 'Sucesso',
+        description: 'Tarefa excluída com sucesso!'
+      })
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Erro ao excluir tarefa',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  const handleToggleTimer = async (id: string) => {
+    try {
+      const tarefa = tarefas.find(t => t.id === id)
+      if (!tarefa) return
+
+      if (tarefa.esta_executando) {
+        await stopTimer(id)
+        toast({
+          title: 'Timer parado',
+          description: 'Tempo de execução pausado'
+        })
+      } else {
+        await startTimer(id)
+        toast({
+          title: 'Timer iniciado',
+          description: 'Tempo de execução iniciado'
+        })
+      }
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Erro ao controlar timer',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+
+    console.log('🔄 Drag End Event:', { active: active.id, over: over?.id })
+
+    if (!over) {
+      console.log('❌ No drop target found')
+      return
+    }
+
+    const activeId = active.id as string
+    const overId = over.id as string
+
+    // Encontrar a tarefa sendo movida
+    const activeTask = tarefas.find(t => t.id === activeId)
+    if (!activeTask) {
+      console.log('❌ Active task not found:', activeId)
+      return
+    }
+
+    console.log('📋 Active task:', activeTask.titulo, 'Current status:', activeTask.status)
+
+    // Determinar o novo status baseado na coluna de destino
+    let newStatus: 'a-fazer' | 'em-andamento' | 'concluido'
+    
+    // Primeiro, verificar se foi solto diretamente em uma coluna
+    if (overId === 'a-fazer' || overId === 'em-andamento' || overId === 'concluido') {
+      newStatus = overId
+      console.log('✅ Dropped on column:', newStatus)
     } else {
-      return `${secs}s`;
-    }
-  };
-
-  // Formatação de data
-  const formatDate = (dateString: string): string => {
-    if (!dateString) return '';
-    return new Date(dateString + "T00:00:00").toLocaleDateString("pt-BR");
-  };
-
-  // Formatação de tempo para cronômetro ativo
-  const formatActiveTime = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Obter tempo atual da tarefa (incluindo tempo em execução)
-  const getCurrentTime = (task: Tarefa): number => {
-      if (task.esta_executando && task.inicio_execucao) {
-        const elapsedTime = Math.floor((Date.now() - new Date(task.inicio_execucao).getTime()) / 1000);
-        return (task.tempo_rastreado || 0) + elapsedTime;
-      }
-      return task.tempo_rastreado || 0;
-    };
-
-  // Função para mostrar toast
-  const showToastMessage = (message: string, type: 'success' | 'error' = 'success') => {
-    setShowToast({ message, type });
-  };
-
-  // useEffect para esconder toast automaticamente
-  useEffect(() => {
-    if (showToast) {
-      const timer = setTimeout(() => {
-        setShowToast(null);
-      }, 3000); // 3 segundos
-
-      return () => clearTimeout(timer);
-    }
-  }, [showToast]);
-
-  // Opções de lembrete
-  const reminderOptions = [
-    { value: 'none', label: 'Nenhum' },
-    { value: '0', label: 'Na hora (no vencimento)' },
-    { value: '5', label: '5 minutos antes' },
-    { value: '10', label: '10 minutos antes' },
-    { value: '15', label: '15 minutos antes' },
-    { value: '30', label: '30 minutos antes' },
-    { value: '60', label: '1 hora antes' }
-  ];
-
-  // Verificar se tarefa tem lembrete ativo
-  const hasActiveReminder = (task: Tarefa): boolean => {
-    return task.data_vencimento && !task.lembrete_enviado;
-  };
-
-  // Cores de prioridade
-  const getPriorityColor = (priority: Tarefa['prioridade']) => {
-    switch (priority) {
-      case 'alta': return { bg: 'bg-red-500/20', border: 'border-red-500', text: 'text-red-400', icon: '🔴' };
-      case 'media': return { bg: 'bg-yellow-500/20', border: 'border-yellow-500', text: 'text-yellow-400', icon: '🟡' };
-      case 'baixa': return { bg: 'bg-blue-500/20', border: 'border-blue-500', text: 'text-blue-400', icon: '🔵' };
-    }
-  };
-
-  // Ícones de prioridade
-  const getPriorityIcon = (priority: Tarefa['prioridade']) => {
-    switch (priority) {
-      case 'alta': return <span className="text-red-400">🔴</span>;
-      case 'media': return <span className="text-yellow-400">🟡</span>;
-      case 'baixa': return <span className="text-blue-400">🔵</span>;
-    }
-  };
-
-  // Iniciar/pausar cronômetro
-  const toggleTimer = async (taskId: string) => {
-    try {
-      const task = tarefas.find(t => t.id === taskId);
-      if (!task) return;
-
-      if (task.esta_executando) {
-        // Pausar timer
-        await stopTimer(taskId);
+      // Se foi solto sobre uma tarefa, usar o status da coluna dessa tarefa
+      const overTask = tarefas.find(t => t.id === overId)
+      if (overTask) {
+        newStatus = overTask.status
+        console.log('✅ Dropped on task:', overTask.titulo, 'Status:', newStatus)
       } else {
-        // Pausar outros timers ativos primeiro
-        const activeTasks = tarefas.filter(t => t.esta_executando && t.id !== taskId);
-        for (const activeTask of activeTasks) {
-          await stopTimer(activeTask.id);
-        }
-        
-        // Iniciar timer da tarefa atual
-        await startTimer(taskId);
+        console.log('❌ Could not determine target status for:', overId)
+        return
       }
-    } catch (error) {
-      console.error('Erro ao alternar timer:', error);
-      showToastMessage('Erro ao alternar timer', 'error');
     }
-  };
 
-  // Mover tarefa entre status
-  const moveTask = async (taskId: string, newStatus: Tarefa['status']) => {
+    // Se o status não mudou, não fazer nada
+    if (activeTask.status === newStatus) {
+      console.log('ℹ️ Status unchanged, no update needed')
+      return
+    }
+
+    console.log('🔄 Updating task status from', activeTask.status, 'to', newStatus)
+
     try {
-      const task = tarefas.find(t => t.id === taskId);
-      if (!task) return;
-
-      // Se movendo para concluído e timer está ativo, parar cronômetro primeiro
-      if (newStatus === 'concluido' && task.esta_executando) {
-        await stopTimer(taskId);
-      }
-
-      // Atualizar status da tarefa
-      await updateTarefa(taskId, { status: newStatus });
+      await updateTarefa(activeId, { status: newStatus })
+      
+      toast({
+        title: 'Sucesso',
+        description: `Tarefa movida para "${newStatus === 'a-fazer' ? 'A Fazer' : newStatus === 'em-andamento' ? 'Em Progresso' : 'Concluído'}"!`
+      })
+      
+      console.log('✅ Task status updated successfully')
     } catch (error) {
-      console.error('Erro ao mover tarefa:', error);
-      showToastMessage('Erro ao mover tarefa', 'error');
+      console.error('❌ Erro ao atualizar status da tarefa:', error)
+      toast({
+        title: 'Erro',
+        description: 'Erro ao atualizar status da tarefa',
+        variant: 'destructive'
+      })
     }
-  };
+  }
 
-  // Deletar tarefa
-  const deleteTask = async (taskId: string) => {
-    try {
-      await deleteTarefa(taskId);
-      showToastMessage('Tarefa excluída com sucesso', 'success');
-    } catch (error) {
-      console.error('Erro ao excluir tarefa:', error);
-      showToastMessage('Erro ao excluir tarefa', 'error');
-    }
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900/98 backdrop-blur-sm">
+        <div className="container mx-auto p-6">
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#8bdb00]"></div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
-  // Criar nova tarefa
-  const createTask = async (taskData: any) => {
-    try {
-      await addTarefa({
-        titulo: taskData.titulo,
-        descricao: taskData.descricao,
-        prioridade: taskData.prioridade,
-        data_vencimento: taskData.data_vencimento || null,
-        reminder: taskData.reminder,
-        hora_lembrete: taskData.hora_lembrete || null,
-        lembrete_enviado: taskData.lembrete_enviado,
-        status: taskData.status,
-        tempo_rastreado: taskData.tempo_rastreado,
-        esta_executando: taskData.esta_executando,
-        inicio_execucao: taskData.inicio_execucao
-      });
-      setShowCreateModal(false);
-      showToastMessage('Tarefa criada com sucesso!', 'success');
-    } catch (error) {
-      console.error('Erro ao criar tarefa:', error);
-      showToastMessage('Erro ao criar tarefa', 'error');
-    }
-  };
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-900/98 backdrop-blur-sm">
+        <div className="container mx-auto p-6">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2 text-slate-200">Erro ao carregar tarefas</h3>
+              <p className="text-slate-400">{error}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
-  // Calcular horário do lembrete
-  const calculateReminderTime = (task: Tarefa): number | null => {
-    if (!task.data_vencimento) {
-      return null;
-    }
-
-    const dueDateTime = new Date(task.data_vencimento);
-    // Implementar lógica de lembrete se necessário
-    
-    return dueDateTime.getTime();
-  };
-
-  // Enviar notificação push via webhook
-  const sendPushNotification = async (task: Tarefa) => {
-    try {
-      const payload = {
-        title: `Lembrete: ${task.titulo}`,
-        body: `${task.descricao}\n\nVencimento: ${task.data_vencimento}`,
-        taskId: task.id,
-        reminderType: 'Lembrete'
-      };
-
-      const response = await fetch('https://n8nwebhook.chatifyz.com/webhook/push-grupongx-app', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.ok) {
-        // Marcar como enviado
-        const updatedTask = { ...task, lembrete_enviado: true };
-        updateTarefa(updatedTask);
-        showToastMessage('🔔 Lembrete enviado para seu celular!');
-      } else {
-        throw new Error('Falha ao enviar notificação');
-      }
-    } catch (error) {
-      console.error('Erro ao enviar notificação:', error);
-      showToastMessage('Erro ao enviar notificação push', 'error');
-    }
-  };
-
-  // Função para enviar webhook de lembrete
-  const sendWebhookReminder = async (task: Tarefa) => {
-    try {
-      // Validar se a tarefa tem os dados necessários
-      if (!task || !task.titulo || !task.id) {
-        console.error('Dados da tarefa inválidos para envio de lembrete:', task);
-        showToastMessage('Erro: dados da tarefa inválidos', 'error');
-        return false;
-      }
-
-      // Construir payload com validação de campos
-      const payload = {
-        title: `Lembrete: ${task.titulo}`,
-        body: `${task.descricao || 'Sem descrição'}\n\nVencimento: ${task.data_vencimento || 'Não definido'}`,
-        taskId: task.id,
-        reminderType: 'Lembrete',
-        reminderTime: task.hora_lembrete || null,
-        timestamp: new Date().toISOString(),
-        priority: task.prioridade || 'media',
-        status: task.status || 'a-fazer'
-      };
-
-      console.log('Enviando webhook com payload:', payload);
-
-      const response = await fetch('https://n8nwebhook.chatifyz.com/webhook/push-grupongx-app', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.ok) {
-        console.log('Webhook de lembrete enviado com sucesso para:', task.titulo);
-        showToastMessage('🔔 Lembrete enviado!');
-        return true;
-      } else {
-        const errorText = await response.text();
-        console.error('Erro na resposta do webhook:', response.status, errorText);
-        throw new Error(`Falha ao enviar webhook de lembrete: ${response.status} - ${errorText}`);
-      }
-    } catch (error) {
-      console.error('Erro ao enviar webhook de lembrete:', error);
-      showToastMessage(`Erro ao enviar lembrete: ${error instanceof Error ? error.message : 'Erro desconhecido'}`, 'error');
-      return false;
-    }
-  };
-
-  // Verificar lembretes pendentes
-  const checkPendingReminders = async () => {
-    const now = new Date();
-    console.log('Verificando lembretes pendentes...', { totalTarefas: tarefas.length, agora: now.toISOString() });
-    
-    for (const task of tarefas) {
-      // Validações mais robustas
-      if (!task || !task.id || !task.titulo) {
-        console.log('Tarefa inválida ignorada:', task);
-        continue;
-      }
-
-      if (!task.data_vencimento || !task.hora_lembrete || task.lembrete_enviado || task.reminder === 'none') {
-        console.log(`Tarefa ${task.titulo} ignorada:`, {
-          data_vencimento: task.data_vencimento,
-          hora_lembrete: task.hora_lembrete,
-          lembrete_enviado: task.lembrete_enviado,
-          reminder: task.reminder
-        });
-        continue;
-      }
-
-      try {
-        // Combinar data e hora do lembrete
-        const reminderDateTime = new Date(`${task.data_vencimento}T${task.hora_lembrete}`);
-        
-        // Verificar se a data é válida
-        if (isNaN(reminderDateTime.getTime())) {
-          console.error(`Data/hora inválida para tarefa ${task.titulo}:`, {
-            data_vencimento: task.data_vencimento,
-            hora_lembrete: task.hora_lembrete
-          });
-          continue;
-        }
-        
-        // Verificar se é hora de enviar o lembrete (com tolerância de 1 minuto)
-        const timeDiff = now.getTime() - reminderDateTime.getTime();
-        console.log(`Tarefa ${task.titulo} - Diferença de tempo:`, {
-          reminderDateTime: reminderDateTime.toISOString(),
-          timeDiff,
-          shouldSend: timeDiff >= 0 && timeDiff < 60000
-        });
-
-        if (timeDiff >= 0 && timeDiff < 60000) { // Entre 0 e 60 segundos
-          console.log(`Enviando lembrete para tarefa: ${task.titulo}`);
-          
-          // Enviar webhook
-          const webhookSuccess = await sendWebhookReminder(task);
-          
-          if (webhookSuccess) {
-            // Marcar lembrete como enviado
-            await updateTarefaCompleta({
-              ...task,
-              lembrete_enviado: true
-            });
+  return (
+    <div className="min-h-screen bg-slate-900/98 backdrop-blur-sm">
+      <div className="container mx-auto p-3 sm:p-4 lg:p-6 space-y-4 sm:space-y-6" style={{ paddingLeft: 'max(1rem, 80px)' }}>
+        {/* Header */}
+        <div className="bg-slate-800/60 backdrop-blur-sm rounded-xl border border-slate-700/50 p-6 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate text-slate-200">Tarefas</h1>
+              <p className="text-sm sm:text-base text-slate-400 mt-1">
+                Gerencie suas tarefas com cronômetro e lembretes
+              </p>
+            </div>
             
-            showToastMessage(`Lembrete enviado para: ${task.titulo}`, 'success');
-          }
-        }
-      } catch (error) {
-        console.error(`Erro ao processar lembrete para tarefa ${task.titulo}:`, error);
-        showToastMessage(`Erro ao enviar lembrete para ${task.titulo}`, 'error');
-      }
-    }
-  };
-
-  // useEffect para verificação inicial de lembretes
-  useEffect(() => {
-    if (tarefas.length > 0) {
-      checkPendingReminders();
-    }
-  }, [tarefas]);
-
-  // useEffect para verificação periódica de lembretes (a cada minuto)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (tarefas.length > 0) {
-        checkPendingReminders();
-      }
-    }, 60000); // 60 segundos
-
-    return () => clearInterval(interval);
-  }, [tarefas]);
-
-
-
-  // Contadores de status
-  const getStatusCounts = () => {
-    const counts = { 'a-fazer': 0, 'em-andamento': 0, 'concluido': 0 };
-    tarefas.forEach(task => {
-      counts[task.status]++;
-    });
-    return counts;
-  };
-
-  // Renderizar card de tarefa
-  const renderTaskCard = (task: Tarefa) => {
-    const priorityColor = getPriorityColor(task.prioridade);
-    const currentTime = getCurrentTime(task);
-    const isActive = task.esta_executando;
-    const completedItems = task.checklist.filter(item => item.done).length;
-    const totalItems = task.checklist.length;
-    const progressPercentage = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
-
-    return (
-      <Card 
-        key={task.id} 
-        className={`
-          bg-[#1f2937] 
-          border border-[#374151] 
-          hover:border-[#4b5563] 
-          hover:shadow-lg hover:shadow-black/20
-          transition-all duration-300 
-          cursor-pointer group 
-          backdrop-blur-sm
-          ${isActive ? 'ring-2 ring-[#8b5cf6] shadow-lg shadow-[#8b5cf6]/10 border-[#8b5cf6]/30' : ''}
-        `}
-        draggable
-        onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
-      >
-        <CardContent className="p-4 space-y-3">
-          {/* Header com título e ações */}
-          <div className="flex items-start justify-between">
-            <h3 
-              className="text-[#ffffff] font-medium text-sm leading-tight flex-1 mr-2 cursor-pointer hover:text-[#c084fc] transition-colors"
-              onClick={() => {
-                setSelectedTask(task);
-                setShowTaskModal(true);
-              }}
-            >
-              {task.titulo}
-            </h3>
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-[#9ca3af] hover:text-[#ffffff] hover:bg-[#374151] rounded-md"
-                onClick={() => {
-                  setSelectedTask(task);
-                  setShowTaskModal(true);
-                }}
-              >
-                <MoreVertical className="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-[#9ca3af] hover:text-[#f87171] hover:bg-[#dc2626]/10 rounded-md"
-                onClick={() => deleteTask(task.id)}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Descrição */}
-          {task.descricao && (
-            <p className="text-[#9ca3af] text-xs leading-relaxed line-clamp-2">
-              {task.descricao}
-            </p>
-          )}
-
-          {/* Prioridade e data */}
-          <div className="flex items-center justify-between">
-            <Badge 
-              className={`
-                ${priorityColor.bg} ${priorityColor.border} ${priorityColor.text} 
-                text-xs font-medium px-2 py-1 rounded-md
-                shadow-sm
-              `}
-            >
-              {priorityColor.icon} {task.prioridade.toUpperCase()}
-            </Badge>
-            {task.data_vencimento && (
-              <div className="flex items-center gap-1.5 text-[#9ca3af] text-xs bg-[#1f2937] px-2 py-1 rounded-md">
-                <CalendarIcon className="w-3 h-3" />
-                <span className="font-medium">
-                  {new Date(task.data_vencimento).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Checklist progress */}
-          {/* Implementar checklist se necessário */}
-          {false && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 text-[#9ca3af]">
-                  <CheckSquare className="w-3 h-3" />
-                  <span className="font-medium">Subtarefas</span>
-                </div>
-                <span className="text-[#d1d5db] font-medium">
-                  {completedItems}/{totalItems}
-                </span>
-              </div>
-              <div className="relative">
-                <div className="w-full bg-[#374151] rounded-full h-1.5 overflow-hidden">
-                  <div 
-                    className="bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] h-full rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${progressPercentage}%` }}
-                  />
-                </div>
-                {progressPercentage === 100 && (
-                  <div className="absolute -top-0.5 right-0 w-2 h-2 bg-[#4ade80] rounded-full animate-pulse" />
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Cronômetro e tempo */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-1.5 text-[#9ca3af] text-xs bg-[#1f2937]/30 px-2 py-1 rounded-md">
-              <Clock className="w-3 h-3" />
-              <span className={`font-mono ${isActive ? 'text-[#a855f7] font-medium' : ''}`}>
-                {isActive ? formatActiveTime(currentTime) : formatTime(currentTime)}
-              </span>
-            </div>
-            <Button
-              size="sm"
-              variant={isActive ? "default" : "outline"}
-              className={`
-                h-8 w-8 p-0 rounded-lg transition-all duration-200
-                ${isActive 
-                  ? 'bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] hover:from-[#7c3aed] hover:to-[#9333ea] text-[#ffffff] shadow-lg shadow-[#8b5cf6]/25' 
-                  : 'border-[#4b5563] text-[#9ca3af] hover:bg-[#374151] hover:text-[#ffffff] hover:border-[#6b7280]'
-                }
-              `}
-              onClick={() => toggleTimer(task.id)}
-            >
-              {isActive ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  // Renderizar visualização Kanban
-  const renderKanbanView = () => {
-    const statusCounts = getStatusCounts();
-    const columns = [
-      { status: 'a-fazer' as const, title: 'PENDENTE', count: statusCounts['a-fazer'] },
-      { status: 'em-andamento' as const, title: 'EM PROGRESSO', count: statusCounts['em-andamento'] },
-      { status: 'concluido' as const, title: 'CONCLUÍDO', count: statusCounts['concluido'] }
-    ];
-
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {columns.map(column => (
-          <div key={column.status} className="space-y-4">
-            {/* Header da coluna */}
-            <div className="flex items-center justify-between">
-              <h2 className="text-[#ffffff] font-semibold text-sm uppercase tracking-wide">
-                {column.title}
-              </h2>
-              <Badge variant="secondary" className="bg-[#374151] text-[#d1d5db]">
-                {column.count}
-              </Badge>
-            </div>
-
-            {/* Container de drop */}
-            <div 
-              className="min-h-[200px] space-y-3 p-2 rounded-lg border-2 border-dashed border-[#374151] transition-colors"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const taskId = e.dataTransfer.getData('text/plain');
-                moveTask(taskId, column.status);
-              }}
-            >
-              {/* Tarefas */}
-              {tarefas
-                .filter(task => task.status === column.status)
-                .map(task => renderTaskCard(task))}
-
-              {/* Botão adicionar */}
-              <Button
-                variant="ghost"
-                className="w-full border-2 border-dashed border-[#4b5563] text-[#9ca3af] hover:border-[#6b7280] hover:text-[#d1d5db] h-12"
-                onClick={() => {
-                  setNewTaskStatus(column.status);
-                  setShowCreateModal(true);
-                }}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Adicionar Tarefa
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  // Renderizar visualização Lista
-  const renderListView = () => {
-    const sortedTasks = [...tarefas].sort((a, b) => {
-      // Ordenar por prioridade e depois por data
-      const priorityOrder = { 'alta': 3, 'media': 2, 'baixa': 1 };
-      if (priorityOrder[a.prioridade] !== priorityOrder[b.prioridade]) {
-        return priorityOrder[b.prioridade] - priorityOrder[a.prioridade];
-      }
-      return new Date(a.data_vencimento || '').getTime() - new Date(b.data_vencimento || '').getTime();
-    });
-
-    return (
-      <div className="space-y-3">
-        {sortedTasks.map(task => {
-          const priorityColor = getPriorityColor(task.prioridade);
-          const currentTime = getCurrentTime(task);
-          const isActive = task.esta_executando;
-
-          return (
-            <Card 
-              key={task.id} 
-              className={`bg-gray-800 border-gray-700 hover:bg-gray-750 transition-all ${
-                isActive ? 'ring-2 ring-green-500' : ''
-              }`}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-center gap-4">
-                  {/* Checkbox de conclusão */}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 w-6 p-0"
-                    onClick={() => moveTask(task.id, task.status === 'concluido' ? 'a-fazer' : 'concluido')}
-                  >
-                    {task.status === 'concluido' ? 
-                      <CheckCircle2 className="w-5 h-5 text-green-500" /> : 
-                      <Circle className="w-5 h-5 text-gray-400" />
-                    }
-                  </Button>
-
-                  {/* Prioridade */}
-                  <div className={`w-3 h-3 rounded-full ${priorityColor.bg.replace('/20', '')}`} />
-
-                  {/* Conteúdo principal */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 
-                        className={`font-semibold cursor-pointer hover:text-[#acf500] ${
-                          task.status === 'concluido' ? 'line-through text-gray-500' : 'text-white'
-                        }`}
-                        onClick={() => {
-                          setSelectedTask(task);
-                          setShowTaskModal(true);
-                        }}
-                      >
-                        {task.titulo}
-                      </h3>
-                      <Badge className={`${priorityColor.bg} ${priorityColor.border} ${priorityColor.text} text-xs`}>
-                        {task.prioridade}
-                      </Badge>
-                    </div>
-                    {task.descricao && (
-                      <p className="text-gray-400 text-sm">{task.descricao}</p>
-                    )}
-                  </div>
-
-                  {/* Data */}
-                  {task.data_vencimento && (
-                    <div className="flex items-center gap-1 text-gray-400 text-sm">
-                      <CalendarIcon className="w-4 h-4" />
-                      {new Date(task.data_vencimento).toLocaleDateString('pt-BR')}
-                    </div>
-                  )}
-
-                  {/* Tempo */}
-                  <div className="flex items-center gap-1 text-gray-400 text-sm min-w-[80px]">
-                    <Clock className="w-4 h-4" />
-                    <span className={isActive ? 'text-green-400 font-mono' : ''}>
-                      {isActive ? formatActiveTime(currentTime) : formatTime(currentTime)}
-                    </span>
-                  </div>
-
-                  {/* Cronômetro */}
-                  <Button
-                    size="sm"
-                    variant={isActive ? "default" : "outline"}
-                    className={`h-8 w-8 p-0 ${
-                      isActive 
-                        ? 'bg-green-600 hover:bg-green-700' 
-                        : 'border-gray-600 hover:bg-gray-700'
-                    }`}
-                    onClick={() => toggleTimer(task.id)}
-                  >
-                    {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </Button>
-
-                  {/* Ações */}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-gray-400 hover:text-white"
-                    onClick={() => {
-                      setSelectedTask(task);
-                      setShowTaskModal(true);
-                    }}
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-
-        {/* Botão adicionar */}
-        <Button
-          variant="outline"
-          className="w-full border-dashed border-gray-600 text-gray-400 hover:border-gray-500 hover:text-gray-300 h-12"
-          onClick={() => setShowCreateModal(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Adicionar Nova Tarefa
-        </Button>
-      </div>
-    );
-  };
-
-  // Renderizar visualização Calendário
-  const renderCalendarView = () => {
-    const today = new Date();
-    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-    const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-    const startOfCalendar = new Date(startOfMonth);
-    startOfCalendar.setDate(startOfCalendar.getDate() - startOfCalendar.getDay());
-
-    const days = [];
-    const current = new Date(startOfCalendar);
-    
-    for (let i = 0; i < 42; i++) {
-      days.push(new Date(current));
-      current.setDate(current.getDate() + 1);
-    }
-
-    const getTasksForDate = (date: Date) => {
-      const dateStr = date.toISOString().split('T')[0];
-      return tarefas.filter(task => task.data_vencimento === dateStr);
-    };
-
-    return (
-      <div className="space-y-4">
-        {/* Header do calendário */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-[#ffffff]">
-            {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-          </h2>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-[#4b5563] text-[#d1d5db] hover:bg-[#374151] hover:text-[#ffffff]"
-              onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-[#4b5563] text-[#d1d5db] hover:bg-[#374151] hover:text-[#ffffff]"
-              onClick={() => setCurrentDate(new Date())}
-            >
-              Hoje
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-[#4b5563] text-[#d1d5db] hover:bg-[#374151] hover:text-[#ffffff]"
-              onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1))}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Grid do calendário */}
-        <div className="grid grid-cols-7 gap-1">
-          {/* Cabeçalho dos dias da semana */}
-          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
-            <div key={day} className="p-2 text-center text-[#9ca3af] font-semibold text-sm">
-              {day}
-            </div>
-          ))}
-
-          {/* Dias do mês */}
-          {days.map((day, index) => {
-            const tasksForDay = getTasksForDate(day);
-            const isCurrentMonth = day.getMonth() === currentDate.getMonth();
-            const isToday = day.toDateString() === today.toDateString();
-
-            return (
-              <div
-                key={index}
-                className={`min-h-[100px] p-2 border border-[#374151] ${
-                  isCurrentMonth ? 'bg-[#1f2937]' : 'bg-[#111827]'
-                } ${isToday ? 'ring-2 ring-[#acf500]' : ''} hover:bg-[#374151] transition-colors`}
-              >
-                <div className={`text-sm font-semibold mb-1 ${
-                  isCurrentMonth ? 'text-[#ffffff]' : 'text-[#6b7280]'
-                } ${isToday ? 'text-[#acf500]' : ''}`}>
-                  {day.getDate()}
-                </div>
-                
-                <div className="space-y-1">
-                  {tasksForDay.slice(0, 3).map(task => {
-                    const priorityColor = getPriorityColor(task.prioridade);
-                    return (
-                      <div
-                        key={task.id}
-                        className={`text-xs p-1 rounded cursor-pointer ${priorityColor.bg} ${priorityColor.text} truncate`}
-                        onClick={() => {
-                          setSelectedTask(task);
-                          setShowTaskModal(true);
-                        }}
-                      >
-                        {task.titulo}
-                      </div>
-                    );
-                  })}
-                  {tasksForDay.length > 3 && (
-                    <div className="text-xs text-[#9ca3af]">
-                      +{tasksForDay.length - 3} mais
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  // Modal de detalhes da tarefa
-  const TaskModal = () => {
-    if (!selectedTask) return null;
-
-    const [editedTask, setEditedTask] = useState<Tarefa>(selectedTask);
-    const [newChecklistItem, setNewChecklistItem] = useState('');
-
-    const handleSave = async () => {
-      try {
-        await updateTarefaCompleta(editedTask);
-        setShowTaskModal(false);
-        setSelectedTask(null);
-      } catch (error) {
-        console.error('Erro ao salvar tarefa:', error);
-      }
-    };
-
-    const addChecklistItem = () => {
-      if (newChecklistItem.trim()) {
-        const newItem = {
-          id: `check-${Date.now()}`,
-          tarefa_id: editedTask.id,
-          texto: newChecklistItem.trim(),
-          concluido: false,
-          ordem: editedTask.checklist.length,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          text: newChecklistItem.trim(), // Propriedade mapeada para compatibilidade
-          done: false // Propriedade mapeada para compatibilidade
-        };
-        setEditedTask(prev => ({
-          ...prev,
-          checklist: [...prev.checklist, newItem]
-        }));
-        setNewChecklistItem('');
-      }
-    };
-
-    const toggleChecklistItem = (itemId: string) => {
-      setEditedTask(prev => ({
-        ...prev,
-        checklist: prev.checklist.map(item =>
-          item.id === itemId ? { 
-            ...item, 
-            done: !item.done,
-            concluido: !item.concluido,
-            updated_at: new Date().toISOString()
-          } : item
-        )
-      }));
-    };
-
-    const removeChecklistItem = (itemId: string) => {
-      setEditedTask(prev => ({
-        ...prev,
-        checklist: prev.checklist.filter(item => item.id !== itemId)
-      }));
-    };
-
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <Card className="bg-[#1f2937] border-[#374151] w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-[#ffffff]">Detalhes da Tarefa</CardTitle>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowTaskModal(false)}
-                className="text-[#9ca3af] hover:text-[#ffffff] hover:bg-[#374151]/50"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Título */}
-            <div>
-              <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Título</label>
-              <Input
-                value={editedTask.titulo}
-                onChange={(e) => setEditedTask(prev => ({ ...prev, titulo: e.target.value }))}
-                className="bg-[#374151] border-[#4b5563] text-[#ffffff]"
-              />
-            </div>
-
-            {/* Descrição */}
-            <div>
-              <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Descrição</label>
-              <Textarea
-                value={editedTask.descricao}
-                onChange={(e) => setEditedTask(prev => ({ ...prev, descricao: e.target.value }))}
-                className="bg-[#374151] border-[#4b5563] text-[#ffffff]"
-                rows={3}
-              />
-            </div>
-
-            {/* Prioridade e Data */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Prioridade</label>
-                <select
-                  value={editedTask.prioridade}
-                  onChange={(e) => setEditedTask(prev => ({ ...prev, prioridade: e.target.value as Tarefa['prioridade'] }))}
-                  className="w-full bg-[#374151] border border-[#4b5563] text-[#ffffff] rounded-md px-3 py-2"
-                >
-                  <option value="baixa">Baixa</option>
-                  <option value="media">Média</option>
-                  <option value="alta">Alta</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Prazo</label>
-                <Input
-                  type="date"
-                  value={editedTask.data_vencimento}
-                  onChange={(e) => setEditedTask(prev => ({ ...prev, data_vencimento: e.target.value }))}
-                  className="bg-[#374151] border-[#4b5563] text-[#ffffff]"
-                />
-              </div>
-            </div>
-
-            {/* Status */}
-            <div>
-              <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Status</label>
-              <select
-                value={editedTask.status}
-                onChange={(e) => setEditedTask(prev => ({ ...prev, status: e.target.value as Tarefa['status'] }))}
-                className="w-full bg-[#374151] border border-[#4b5563] text-[#ffffff] rounded-md px-3 py-2"
-              >
-                <option value="a-fazer">A Fazer</option>
-                <option value="em-andamento">Em Andamento</option>
-                <option value="concluido">Concluído</option>
-              </select>
-            </div>
-
-            {/* Lembrete e Hora */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Lembrete</label>
-                <select
-                  value={editedTask.reminder}
-                  onChange={(e) => setEditedTask(prev => ({ ...prev, reminder: e.target.value }))}
-                  className="w-full bg-[#374151] border border-[#4b5563] text-[#ffffff] rounded-md px-3 py-2"
-                >
-                  {reminderOptions.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Hora do lembrete</label>
-                <Input
-                  type="time"
-                  step="60"
-                  value={editedTask.hora_lembrete || ''}
-                  onChange={(e) => setEditedTask(prev => ({ ...prev, hora_lembrete: e.target.value }))}
-                  className="bg-[#374151] border-[#4b5563] text-[#ffffff] [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70"
-                  disabled={editedTask.reminder === 'none'}
-                  style={{ 
-                    colorScheme: 'dark',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'textfield'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Checklist */}
-            <div>
-              <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Checklist</label>
-              <div className="space-y-2">
-                {editedTask.checklist.map(item => (
-                  <div key={item.id} className="flex items-center gap-2 p-2 bg-[#374151] rounded">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-5 w-5 p-0"
-                      onClick={() => toggleChecklistItem(item.id)}
-                    >
-                      {item.done ? 
-                        <CheckCircle2 className="w-4 h-4 text-[#10b981]" /> : 
-                        <Circle className="w-4 h-4 text-[#9ca3af]" />
-                      }
-                    </Button>
-                    <span className={`flex-1 text-sm ${item.done ? 'line-through text-[#6b7280]' : 'text-[#ffffff]'}`}>
-                      {item.text}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-5 w-5 p-0 text-[#9ca3af] hover:text-[#f87171]"
-                      onClick={() => removeChecklistItem(item.id)}
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
-                ))}
-                
-                {/* Adicionar item */}
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Adicionar item..."
-                    value={newChecklistItem}
-                    onChange={(e) => setNewChecklistItem(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && addChecklistItem()}
-                    className="bg-[#374151] border-[#4b5563] text-[#ffffff] placeholder:text-[#9ca3af]"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={addChecklistItem}
-                    className="bg-[#acf500] hover:bg-[#9de000] text-black"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            {/* Tempo registrado */}
-            <div>
-              <label className="text-[#d1d5db] text-sm font-medium mb-2 block">Tempo Registrado</label>
-              <div className="flex items-center gap-2 text-[#d1d5db]">
-                <Clock className="w-4 h-4" />
-                <span>{formatTime(getCurrentTime(editedTask))}</span>
-                {editedTask.isRunning && (
-                  <Badge className="bg-[#059669] text-[#ffffff]">
-                    <Timer className="w-3 h-3 mr-1" />
-                    Em execução
-                  </Badge>
-                )}
-              </div>
-            </div>
-
-            {/* Botões */}
-            <div className="flex gap-2 pt-4">
-              <Button
-                onClick={handleSave}
-                className="bg-[#acf500] hover:bg-[#9de000] text-black"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                Salvar
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowTaskModal(false)}
-                className="border-[#4b5563] text-[#d1d5db] hover:bg-[#374151] hover:text-[#ffffff]"
-              >
-                Cancelar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  };
-
-  // Modal de criação de tarefa
-  const CreateTaskModal = () => {
-    const [newTask, setNewTask] = useState({
-      titulo: '',
-      descricao: '',
-      prioridade: 'media' as 'baixa' | 'media' | 'alta',
-      data_vencimento: '',
-      reminder: 'none',
-      hora_lembrete: '',
-      lembrete_enviado: false,
-      status: newTaskStatus,
-      tempo_rastreado: 0,
-      esta_executando: false,
-      inicio_execucao: null as string | null,
-      checklist: []
-    });
-
-    const handleCreate = () => {
-      if (!newTask.titulo.trim()) {
-        showToastMessage('Título é obrigatório!', 'error');
-        return;
-      }
-
-      // Validação: se lembrete selecionado, data e hora são obrigatórias
-      if (newTask.reminder !== 'none' && !newTask.data_vencimento) {
-        showToastMessage('Data é obrigatória quando um lembrete é selecionado!', 'error');
-        return;
-      }
-
-      if (newTask.reminder !== 'none' && !newTask.hora_lembrete) {
-        showToastMessage('Hora do lembrete é obrigatória quando um lembrete é selecionado!', 'error');
-        return;
-      }
-
-      createTask(newTask);
-    };
-
-    const priorityOptions = [
-      { value: 'baixa', label: 'Baixa', color: 'text-[#4ade80]', bg: 'bg-[#10b981]/10', border: 'border-[#10b981]/20' },
-      { value: 'media', label: 'Média', color: 'text-[#fbbf24]', bg: 'bg-[#f59e0b]/10', border: 'border-[#f59e0b]/20' },
-      { value: 'alta', label: 'Alta', color: 'text-[#f87171]', bg: 'bg-[#dc2626]/10', border: 'border-[#dc2626]/20' }
-    ];
-
-    return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div className="bg-gradient-to-br from-[#111827] to-[#1f2937] border border-[#374151]/50 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-          <div className="p-4 sm:p-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] rounded-lg flex items-center justify-center">
-                  <Plus className="w-5 h-5 text-[#ffffff]" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold text-[#ffffff]">Nova Tarefa</h2>
-                  <p className="text-sm text-[#9ca3af]">Crie uma nova tarefa para organizar seu trabalho</p>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowCreateModal(false)}
-                className="text-[#9ca3af] hover:text-[#ffffff] hover:bg-[#374151]/50 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </Button>
-            </div>
-
-            <div className="space-y-6">
-              {/* Título */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-[#d1d5db]">
-                  Título <span className="text-[#f87171]">*</span>
-                </label>
-                <Input
-                  value={newTask.titulo}
-                  onChange={(e) => setNewTask(prev => ({ ...prev, titulo: e.target.value }))}
-                  placeholder="Ex: Revisar documentação do projeto"
-                  className="bg-[#1f2937]/50 border-[#4b5563]/50 text-[#ffffff] placeholder:text-[#6b7280] focus:border-[#8b5cf6]/50 focus:ring-[#8b5cf6]/20"
-                />
-              </div>
-
-              {/* Descrição */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-[#d1d5db]">Descrição</label>
-                <Textarea
-                  value={newTask.descricao}
-                  onChange={(e) => setNewTask(prev => ({ ...prev, descricao: e.target.value }))}
-                  placeholder="Adicione detalhes sobre a tarefa..."
-                  rows={3}
-                  className="bg-[#1f2937]/50 border-[#4b5563]/50 text-[#ffffff] placeholder:text-[#6b7280] focus:border-[#8b5cf6]/50 focus:ring-[#8b5cf6]/20 resize-none"
-                />
-              </div>
-
-              {/* Prioridade */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-[#d1d5db]">Prioridade</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {priorityOptions.map(option => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setNewTask(prev => ({ ...prev, prioridade: option.value as Tarefa['prioridade'] }))}
-                      className={`
-                        p-3 rounded-lg border transition-all duration-200 text-sm font-medium
-                        ${newTask.prioridade === option.value 
-                          ? `${option.bg} ${option.border} ${option.color} ring-2 ring-current/20` 
-                          : 'bg-[#1f2937]/30 border-[#4b5563]/30 text-[#9ca3af] hover:bg-[#374151]/30 hover:border-[#6b7280]/30'
-                        }
-                      `}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Agendamento */}
-              <div className="space-y-4 p-4 bg-[#1f2937]/30 rounded-lg border border-[#374151]/30">
-                <div className="flex items-center gap-2">
-                  <CalendarIcon className="w-5 h-5 text-[#a855f7]" />
-                  <h3 className="text-lg font-medium text-[#ffffff]">Agendamento</h3>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-[#d1d5db]">Data de vencimento</label>
-                    <Input
-                      type="date"
-                      value={newTask.data_vencimento}
-                      onChange={(e) => setNewTask(prev => ({ ...prev, data_vencimento: e.target.value }))}
-                      className="bg-[#1f2937]/50 border-[#4b5563]/50 text-[#ffffff] focus:border-[#8b5cf6]/50 focus:ring-[#8b5cf6]/20"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-[#d1d5db]">Hora do lembrete</label>
-                    <Input
-                      type="time"
-                      step="60"
-                      value={newTask.hora_lembrete}
-                      onChange={(e) => setNewTask(prev => ({ ...prev, hora_lembrete: e.target.value }))}
-                      className="bg-[#1f2937]/50 border-[#4b5563]/50 text-[#ffffff] focus:border-[#8b5cf6]/50 focus:ring-[#8b5cf6]/20 [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70"
-                      disabled={newTask.reminder === 'none'}
-                      style={{ 
-                        colorScheme: 'dark',
-                        WebkitAppearance: 'none',
-                        MozAppearance: 'textfield'
-                      }}
-                    />
-                  </div>
-
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-[#d1d5db]">Lembrete</label>
-                  <select
-                    value={newTask.reminder}
-                    onChange={(e) => setNewTask(prev => ({ ...prev, reminder: e.target.value }))}
-                    className="w-full p-3 bg-[#1f2937]/50 border border-[#4b5563]/50 rounded-lg text-[#ffffff] focus:border-[#8b5cf6]/50 focus:ring-[#8b5cf6]/20 focus:outline-none"
-                  >
-                    {reminderOptions.map(option => (
-                      <option key={option.value} value={option.value} className="bg-[#1f2937]">
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  
-                  {newTask.reminder !== 'none' && (
-                    <div className="flex items-center gap-2 p-3 bg-[#a855f7]/10 border border-[#a855f7]/20 rounded-lg">
-                      <Bell className="w-4 h-4 text-[#c084fc]" />
-                      <p className="text-sm text-[#d8b4fe]">
-                        Você receberá uma notificação push no horário selecionado
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex flex-col sm:flex-row justify-end gap-3 mt-8 pt-6 border-t border-[#374151]/50">
-              <Button
-                variant="outline"
-                onClick={() => setShowCreateModal(false)}
-                className="border-[#4b5563]/50 text-[#d1d5db] hover:bg-[#374151]/50 hover:text-[#ffffff] hover:border-[#6b7280]/50 w-full sm:w-auto order-2 sm:order-1"
-              >
-                Cancelar
-              </Button>
+            <div className="flex gap-2">
               <Button 
-                onClick={handleCreate}
-                className="bg-gradient-to-r from-[#8b5cf6] to-[#a855f7] hover:from-[#7c3aed] hover:to-[#9333ea] text-[#ffffff] shadow-lg shadow-[#8b5cf6]/25 w-full sm:w-auto order-1 sm:order-2"
+                onClick={() => setIsCreateModalOpen(true)} 
+                className="w-full sm:w-auto shrink-0 bg-[#8bdb00] hover:bg-[#7bc400] text-slate-900 font-medium"
+                size="sm"
               >
-                <Plus className="w-4 h-4 mr-2" />
-                Criar Tarefa
+                <Plus className="h-4 w-4 mr-2" />
+                <span className="hidden xs:inline">Nova Tarefa</span>
+                <span className="xs:hidden">Nova</span>
               </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Toast de Notificação
-  const Toast: React.FC = () => {
-    if (!showToast) return null;
-
-    const isSuccess = showToast.type === 'success';
-
-    return (
-      <div className={`
-        fixed top-4 sm:top-6 right-4 sm:right-6 left-4 sm:left-auto z-50 p-4 rounded-xl shadow-2xl backdrop-blur-sm border
-        transition-all duration-300 animate-slideInRight max-w-sm sm:max-w-sm
-        ${isSuccess 
-          ? 'bg-gradient-to-r from-green-600/90 to-green-500/90 border-green-400/30 text-white' 
-          : 'bg-gradient-to-r from-red-600/90 to-red-500/90 border-red-400/30 text-white'
-        }
-      `}>
-        <div className="flex items-center gap-3">
-          <div className={`
-            w-8 h-8 rounded-full flex items-center justify-center
-            ${isSuccess ? 'bg-green-400/20' : 'bg-red-400/20'}
-          `}>
-            {isSuccess ? 
-              <CheckCircle2 className="w-5 h-5" /> : 
-              <AlertCircle className="w-5 h-5" />
-            }
-          </div>
-          <div className="flex-1">
-            <p className="font-medium text-sm">{showToast.message}</p>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Visualização Kanban
-  const KanbanView: React.FC = () => {
-    const statusCounts = getStatusCounts();
-    
-    const columns = [
-      { id: 'a-fazer', title: 'A FAZER', count: statusCounts['a-fazer'] },
-      { id: 'em-andamento', title: 'EM PROGRESSO', count: statusCounts['em-andamento'] },
-      { id: 'concluido', title: 'CONCLUÍDO', count: statusCounts['concluido'] }
-    ];
-
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {columns.map(column => (
-          <div key={column.id} className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-border bg-muted/30">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${
-                    column.id === 'a-fazer' ? 'bg-warning' :
-                    column.id === 'em-andamento' ? 'bg-info' : 'bg-success'
-                  }`} />
-                  <h3 className="font-medium text-foreground text-sm">
-                    {column.title}
-                  </h3>
-                  <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                    {column.count}
-                  </Badge>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setNewTaskStatus(column.id as Tarefa['status']);
-                    setShowCreateModal(true);
-                  }}
-                  className="h-7 w-7 p-0 hover:bg-accent"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            </div>
-            
-            <div className="p-3 space-y-3 min-h-[400px]">
-              {tarefas
-                .filter(task => task.status === column.id)
-                .map(task => renderTaskCard(task))}
               
-              {/* Empty state */}
-              {tarefas.filter(task => task.status === column.id).length === 0 && (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                    <CheckSquare className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">Nenhuma tarefa</p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setNewTaskStatus(column.id as Tarefa['status']);
-                      setShowCreateModal(true);
-                    }}
-                    className="mt-2 text-xs"
-                  >
-                    <Plus className="w-3 h-3 mr-1" />
-                    Adicionar tarefa
-                  </Button>
-                </div>
-              )}
+
             </div>
           </div>
-        ))}
-      </div>
-    );
-  };
+        </div>
 
-  // Visualização Lista
-  const ListView: React.FC = () => {
-    const sortedTasks = [...tarefas].sort((a, b) => {
-      // Ordenar por data de vencimento, depois por prioridade
-      if (a.data_vencimento !== b.data_vencimento) {
-        return new Date(a.data_vencimento).getTime() - new Date(b.data_vencimento).getTime();
-      }
-      const priorityOrder = { 'alta': 3, 'media': 2, 'baixa': 1 };
-      return priorityOrder[b.prioridade] - priorityOrder[a.prioridade];
-    });
-
-    return (
-      <div className="space-y-3">
-        {sortedTasks.map(task => (
-          <Card key={task.id} className={`border-l-4 ${getPriorityColor(task.prioridade)}`}>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="flex items-center gap-2">
-                    {getPriorityIcon(task.prioridade)}
-                    <h3 className="font-semibold">{task.titulo}</h3>
-                    {hasActiveReminder(task) && <Bell className="w-4 h-4 text-yellow-500" />}
-                  </div>
-                  
-                  <Badge variant="outline">
-                    {task.status === 'a-fazer' ? 'A Fazer' : 
-                     task.status === 'em-andamento' ? 'Em Progresso' : 'Concluído'}
-                  </Badge>
-                  
-                  <span className="text-sm text-gray-500">
-                    📅 {formatDate(task.data_vencimento)}
-                  </span>
-                  
-                  <span className="text-sm text-gray-500">
-                    ⏱️ {formatTime(getCurrentTime(task))}
-                  </span>
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <Card className="bg-slate-800/60 backdrop-blur-sm border-slate-700/50 hover:shadow-xl transition-all duration-200 hover:border-slate-600/50">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="p-1.5 sm:p-2 bg-slate-700/50 rounded-lg shrink-0">
+                  <Target className="h-3 w-3 sm:h-4 sm:w-4 text-[#8bdb00]" />
                 </div>
-                
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant={task.esta_executando ? "destructive" : "default"}
-                    size="sm"
-                    onClick={() => toggleTimer(task.id)}
-                  >
-                    {task.esta_executando ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </Button>
-                  
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedTask(task);
-                      setShowTaskModal(true);
-                    }}
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </Button>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-slate-400">Total</p>
+                  <p className="text-lg sm:text-2xl font-bold truncate text-slate-200">{stats.total}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
-        ))}
-      </div>
-    );
-  };
-
-  // Visualização Calendário
-  const CalendarView: React.FC = () => {
-    const getDaysInMonth = (date: Date) => {
-      const year = date.getFullYear();
-      const month = date.getMonth();
-      const firstDay = new Date(year, month, 1);
-      const lastDay = new Date(year, month + 1, 0);
-      const daysInMonth = lastDay.getDate();
-      const startingDayOfWeek = firstDay.getDay();
-
-      const days = [];
-      
-      // Dias do mês anterior
-      for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-        const prevDate = new Date(year, month, -i);
-        days.push({ date: prevDate, isCurrentMonth: false });
-      }
-      
-      // Dias do mês atual
-      for (let day = 1; day <= daysInMonth; day++) {
-        days.push({ date: new Date(year, month, day), isCurrentMonth: true });
-      }
-      
-      return days;
-    };
-
-    const getTasksForDate = (date: Date) => {
-      const dateString = date.toISOString().split('T')[0];
-      return tarefas.filter(task => task.data_vencimento === dateString);
-    };
-
-    const days = getDaysInMonth(currentDate);
-
-    return (
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">
-            {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-          </h2>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentDate(new Date())}
-            >
-              Hoje
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1))}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
+          
+          <Card className="bg-slate-800/60 backdrop-blur-sm border-slate-700/50 hover:shadow-xl transition-all duration-200 hover:border-slate-600/50">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="p-1.5 sm:p-2 bg-slate-700/50 rounded-lg shrink-0">
+                  <Circle className="h-3 w-3 sm:h-4 sm:w-4 text-slate-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-slate-400">A Fazer</p>
+                  <p className="text-lg sm:text-2xl font-bold truncate text-slate-200">{stats.aFazer}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-slate-800/60 backdrop-blur-sm border-slate-700/50 hover:shadow-xl transition-all duration-200 hover:border-slate-600/50">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="p-1.5 sm:p-2 bg-blue-500/10 rounded-lg shrink-0">
+                  <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-blue-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-slate-400">Em Progresso</p>
+                  <p className="text-lg sm:text-2xl font-bold truncate text-slate-200">{stats.emAndamento}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-slate-800/60 backdrop-blur-sm border-slate-700/50 hover:shadow-xl transition-all duration-200 hover:border-slate-600/50">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="p-1.5 sm:p-2 bg-green-500/10 rounded-lg shrink-0">
+                  <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-slate-400">Concluído</p>
+                  <p className="text-lg sm:text-2xl font-bold truncate text-slate-200">{stats.concluido}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="grid grid-cols-7 gap-1 mb-4">
-          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
-            <div key={day} className="p-2 text-center font-semibold text-[#9ca3af]">
-              {day}
+        {/* Filters and View Toggle */}
+        <div className="flex flex-col xl:flex-row gap-3 sm:gap-4">
+          <div className="flex-1 flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Buscar tarefas..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 text-sm bg-slate-700/50 border-slate-600/50 text-slate-200 placeholder:text-slate-400 focus:border-[#8bdb00] focus:ring-[#8bdb00]/20"
+              />
             </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-7 gap-1">
-          {days.map((day, index) => {
-            const tasksForDay = getTasksForDate(day.date);
-            return (
-              <div
-                key={index}
-                className={`min-h-[100px] p-2 border border-[#374151] rounded ${
-                  day.isCurrentMonth ? 'bg-[#1f2937]' : 'bg-[#111827]'
-                }`}
-              >
-                <div className={`text-sm font-medium mb-1 ${
-                  day.isCurrentMonth ? 'text-[#ffffff]' : 'text-[#9ca3af]'
-                }`}>
-                  {day.date.getDate()}
-                </div>
-                
-                <div className="space-y-1">
-                  {tasksForDay.slice(0, 2).map(task => (
-                    <div
-                      key={task.id}
-                      className={`text-xs p-1 rounded cursor-pointer ${getPriorityColor(task.prioridade)} bg-[#374151]`}
-                      onClick={() => {
-                        setSelectedTask(task);
-                        setShowTaskModal(true);
-                      }}
-                    >
-                      <div className="flex items-center gap-1">
-                        {hasActiveReminder(task) && <Bell className="w-3 h-3 text-[#fbbf24]" />}
-                        <span className="truncate">{task.titulo}</span>
-                      </div>
-                      <div className="text-[#9ca3af]">{formatDate(task.data_vencimento)}</div>
-                    </div>
-                  ))}
-                  {tasksForDay.length > 2 && (
-                    <div className="text-xs text-[#9ca3af]">
-                      +{tasksForDay.length - 2} mais
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const statusCounts = getStatusCounts();
-
-  // Tratamento de loading e erro
-  if (tarefasLoading || vendedoresLoading) {
-    return (
-      <div className="min-h-screen bg-[#0f172a] p-8 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#8b5cf6] mx-auto mb-4"></div>
-          <p className="text-[#ffffff]">Carregando tarefas...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (tarefasError || vendedoresError) {
-    return (
-      <div className="min-h-screen bg-[#0f172a] p-8 flex items-center justify-center">
-        <div className="text-center text-red-500">
-          <p>Erro ao carregar dados: {tarefasError?.message || vendedoresError?.message}</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[#0f172a]">
-      {/* Header */}
-      <div className="border-b border-[#1e293b] bg-[#1e293b]/50 backdrop-blur-sm sticky top-0 z-30">
-        <div className="px-4 sm:px-6 py-4">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-[#8b5cf6] flex items-center justify-center">
-                  <CheckSquare className="h-4 w-4 text-[#ffffff]" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-semibold text-[#ffffff]">Tarefas</h1>
-                  <p className="text-sm text-[#94a3b8] hidden sm:block">Gerencie suas tarefas com cronômetro e lembretes</p>
-                </div>
-              </div>
+            
+            <div className="flex flex-col xs:flex-row gap-3 sm:gap-4">
+              <Select value={filterStatus} onValueChange={(value: FilterStatus) => setFilterStatus(value)}>
+                <SelectTrigger className="w-full xs:w-[140px] sm:w-[160px] lg:w-[180px] bg-slate-700/50 border-slate-600/50 text-slate-200 focus:border-[#8bdb00] focus:ring-[#8bdb00]/20">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="all" className="text-slate-200 focus:bg-slate-700 focus:text-slate-200">Todos os status</SelectItem>
+                  <SelectItem value="a-fazer" className="text-slate-200 focus:bg-slate-700 focus:text-slate-200">A Fazer</SelectItem>
+                  <SelectItem value="em-andamento" className="text-slate-200 focus:bg-slate-700 focus:text-slate-200">Em Progresso</SelectItem>
+                  <SelectItem value="concluido" className="text-slate-200 focus:bg-slate-700 focus:text-slate-200">Concluído</SelectItem>
+                </SelectContent>
+              </Select>
               
-              {/* Contador de Status */}
-              <div className="hidden md:flex items-center gap-2 ml-4 lg:ml-8">
-                <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#f59e0b]/10 text-[#f59e0b]">
-                  <Circle className="h-3 w-3" />
-                  <span className="text-xs font-medium">{statusCounts['a-fazer']}</span>
-                </div>
-                <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#3b82f6]/10 text-[#3b82f6]">
-                  <Timer className="h-3 w-3" />
-                  <span className="text-xs font-medium">{statusCounts['em-andamento']}</span>
-                </div>
-                <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#10b981]/10 text-[#10b981]">
-                  <CheckCircle2 className="h-3 w-3" />
-                  <span className="text-xs font-medium">{statusCounts['concluido']}</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Contador de Status Mobile */}
-            <div className="flex md:hidden items-center gap-2">
-              <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#f59e0b]/10 text-[#f59e0b]">
-                <Circle className="h-3 w-3" />
-                <span className="text-xs font-medium">{statusCounts['a-fazer']}</span>
-              </div>
-              <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#3b82f6]/10 text-[#3b82f6]">
-                <Timer className="h-3 w-3" />
-                <span className="text-xs font-medium">{statusCounts['em-andamento']}</span>
-              </div>
-              <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#10b981]/10 text-[#10b981]">
-                <CheckCircle2 className="h-3 w-3" />
-                <span className="text-xs font-medium">{statusCounts['concluido']}</span>
-              </div>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              {/* Seletor de Visualização */}
-              <div className="flex bg-[#1e293b] rounded-lg p-1">
-                <Button
-                  variant={viewMode === 'kanban' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('kanban')}
-                  className="h-8 px-2 sm:px-3 text-xs flex-1 sm:flex-none"
-                >
-                  <LayoutGrid className="w-3 h-3 sm:mr-1.5" />
-                  <span className="hidden sm:inline">Kanban</span>
-                </Button>
-                <Button
-                  variant={viewMode === 'lista' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('lista')}
-                  className="h-8 px-2 sm:px-3 text-xs flex-1 sm:flex-none"
-                >
-                  <List className="w-3 h-3 sm:mr-1.5" />
-                  <span className="hidden sm:inline">Lista</span>
-                </Button>
-                <Button
-                  variant={viewMode === 'calendario' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('calendario')}
-                  className="h-8 px-2 sm:px-3 text-xs flex-1 sm:flex-none"
-                >
-                  <CalendarIcon className="w-3 h-3 sm:mr-1.5" />
-                  <span className="hidden sm:inline">Calendário</span>
-                </Button>
-              </div>
-
-              <Button
-                onClick={() => {
-                  setNewTaskStatus('a-fazer');
-                  setShowCreateModal(true);
-                }}
-                className="h-9 px-4 bg-[#8b5cf6] hover:bg-[#7c3aed] text-[#ffffff] shadow-sm w-full sm:w-auto"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Nova Tarefa
-              </Button>
+              <Select value={filterPriority} onValueChange={(value: FilterPriority) => setFilterPriority(value)}>
+                <SelectTrigger className="w-full xs:w-[140px] sm:w-[160px] lg:w-[180px] bg-slate-700/50 border-slate-600/50 text-slate-200 focus:border-[#8bdb00] focus:ring-[#8bdb00]/20">
+                  <SelectValue placeholder="Prioridade" />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="all" className="text-slate-200 focus:bg-slate-700 focus:text-slate-200">Todas as prioridades</SelectItem>
+                  <SelectItem value="baixa" className="text-slate-200 focus:bg-slate-700 focus:text-slate-200">Baixa</SelectItem>
+                  <SelectItem value="media" className="text-slate-200 focus:bg-slate-700 focus:text-slate-200">Média</SelectItem>
+                  <SelectItem value="alta" className="text-slate-200 focus:bg-slate-700 focus:text-slate-200">Alta</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
+          
+          <Tabs value={viewMode} onValueChange={(value: ViewMode) => setViewMode(value)} className="w-full xl:w-auto">
+            <TabsList className="grid w-full grid-cols-3 xl:w-auto xl:grid-cols-none xl:flex bg-slate-700/50 border-slate-600/50">
+              <TabsTrigger value="kanban" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-slate-400 data-[state=active]:text-black data-[state=active]:bg-[#8bdb00] data-[state=active]:border-[#8bdb00]">
+                <Kanban className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Kanban</span>
+                <span className="sm:hidden">K</span>
+              </TabsTrigger>
+              <TabsTrigger value="list" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-slate-400 data-[state=active]:text-black data-[state=active]:bg-[#8bdb00] data-[state=active]:border-[#8bdb00]">
+                <List className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Lista</span>
+                <span className="sm:hidden">L</span>
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-slate-400 data-[state=active]:text-black data-[state=active]:bg-[#8bdb00] data-[state=active]:border-[#8bdb00]">
+                <Calendar className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Calendário</span>
+                <span className="sm:hidden">C</span>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="p-4 sm:p-6">
-        {/* Renderização das Visualizações */}
-        {viewMode === 'kanban' && <KanbanView />}
-        {viewMode === 'lista' && <ListView />}
-        {viewMode === 'calendario' && <CalendarView />}
-      </div>
+        {/* Content */}
+        <div className="min-h-[400px]">
+          {viewMode === 'kanban' && (
+            <KanbanView
+              tarefas={filteredTasks}
+              onEdit={handleEditTask}
+              onDelete={handleDeleteTask}
+              onToggleTimer={handleToggleTimer}
+              onDragEnd={handleDragEnd}
+            />
+          )}
+          
+          {viewMode === 'list' && (
+            <ListView
+              tarefas={filteredTasks}
+              onEdit={handleEditTask}
+              onDelete={handleDeleteTask}
+              onToggleTimer={handleToggleTimer}
+            />
+          )}
+          
+          {viewMode === 'calendar' && (
+            <CalendarView tarefas={filteredTasks} />
+          )}
+        </div>
 
-      {/* Modais */}
-      {showTaskModal && <TaskModal />}
-      {showCreateModal && <CreateTaskModal />}
-      
-      {/* Toast */}
-      <Toast />
+        {/* Modals */}
+        <TaskModal
+          tarefa={selectedTask}
+          isOpen={isTaskModalOpen}
+          onClose={() => {
+            setIsTaskModalOpen(false)
+            setSelectedTask(null)
+          }}
+          onSave={handleSaveTask}
+        />
+        
+        <CreateTaskModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          onSave={handleCreateTask}
+        />
+      </div>
     </div>
-  );
-};
-
-export default Tarefas;
+  )
+}
