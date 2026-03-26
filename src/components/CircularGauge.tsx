@@ -51,37 +51,38 @@ export const CircularGauge = ({ value, max, label }: CircularGaugeProps) => {
   const fillEndAngle = startAngle + (animatedPercentage / 100) * Math.PI;
 
   return (
-    <div className="flex flex-col items-center gap-6">
+    <div className="flex flex-col items-center">
       <div className="relative">
         <svg width={width} height={height} className="overflow-visible">
-          {/* Background arc (gray/muted) - straight base */}
+          {/* Background arc - subtle border */}
           <path
             d={createArcPath(startAngle, endAngle, radius)}
             fill="none"
-            stroke="rgba(255, 255, 255, 0.15)"
+            stroke="rgba(255, 255, 255, 0.03)"
             strokeWidth={strokeWidth}
             strokeLinecap="butt"
           />
           
-          {/* Filled arc (primary color) - straight base */}
+          {/* Filled arc (vibrant green) */}
           <path
             d={createArcPath(startAngle, fillEndAngle, radius)}
             fill="none"
-            stroke="hsl(var(--primary))"
+            stroke="#a3e635"
             strokeWidth={strokeWidth}
             strokeLinecap="butt"
             style={{
               transition: "d 1s ease-in-out",
-              filter: "drop-shadow(0 0 20px hsl(var(--primary)))",
+              filter: "drop-shadow(0 0 12px rgba(163, 230, 53, 0.3))",
             }}
           />
         </svg>
         
-        {/* Text overlay - centered inside gauge */}
-        <div className="absolute inset-0 flex items-center justify-center" style={{ paddingTop: '60px' }}>
-          <p className="text-base font-medium text-white uppercase tracking-wider">
+        {/* Text overlay */}
+        <div className="absolute inset-0 flex flex-col items-center justify-end pb-8">
+          <p className="text-[10px] font-extrabold text-white/20 uppercase tracking-[0.2em] mb-1">
             {label}
           </p>
+          <div className="w-8 h-[1px] bg-white/10" />
         </div>
       </div>
     </div>

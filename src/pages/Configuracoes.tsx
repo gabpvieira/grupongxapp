@@ -1,541 +1,349 @@
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Settings, Trash2, Edit, Check, X, Target, Save } from "lucide-react";
-import { useConfig, Vendedor } from "@/hooks/useConfig";
-import { useVendedores } from "@/hooks/useVendedores";
-import { useMetasSemana, METRICAS_DISPONIVEIS } from "@/hooks/useMetasSemana";
-import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "sonner";
+import React, { useState, useEffect } from 'react';
+import { 
+  Settings, 
+  Target, 
+  Users, 
+  SlidersHorizontal, 
+  Trash2, 
+  UserPlus, 
+  Loader2, 
+  CheckCircle2, 
+  Info,
+  AlertCircle
+} from 'lucide-react';
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { SettingsSection } from '@/components/configuracoes/SettingsSection';
+import { useConfiguracoes } from '@/hooks/useConfiguracoes';
+import { toast } from 'sonner';
 
-const vendedorSchema = z.object({
-  nome: z.string().trim().min(1, "Nome é obrigatório").max(100, "Nome muito longo"),
-  email: z.string().trim().email("E-mail inválido").max(255, "E-mail muito longo"),
-  ativo: z.boolean().default(true),
-});
-
-const Configuracoes = () => {
+const Configuracoes: React.FC = () => {
   const {
-    config,
-    loading: configLoading,
-    updateMeta,
-  } = useConfig();
-
-  const {
+    loading,
+    salvando,
+    metaMensal: dbMetaMensal,
+    metasSemanais,
     vendedores,
-    loading: vendedoresLoading,
-    addVendedor,
-    updateVendedor,
-    deleteVendedor,
-  } = useVendedores();
+    salvarMetaMensal,
+    salvarTodasMetas,
+    toggleVendedorAtivo,
+    deletarVendedor,
+    adicionarVendedor
+  } = useConfiguracoes();
 
-  const {
-    metas,
-    loading: metasLoading,
-    updateMeta: updateMetaSemanal,
-    getMetaValue,
-    formatValue,
-    metricasDisponiveis
-  } = useMetasSemana();
+  const [tabAtiva, setTabAtiva] = useState('geral');
+  
+  // Estado local para Meta Mensal
+  const [localMetaMensal, setLocalMetaMensal] = useState<string>('0');
+  
+  // Estado local para Metas Semanais
+  const [valoresMetas, setValoresMetas] = useState<Record<string, string>>({});
+  const [alteracoesMetas, setAlteracoesMetas] = useState<Record<string, string>>({});
+  
+  // Estado local para Novo Vendedor
+  const [novoNome, setNovoNome] = useState('');
+  const [novoEmail, setNovoEmail] = useState('');
 
-  const [meta, setMeta] = useState("R$ 0,00");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Vendedor | null>(null);
-  const [metasSemanais, setMetasSemanais] = useState<Record<string, string>>({});
-
-  // Atualizar meta quando config mudar
+  // Sincronizar dados iniciais
   useEffect(() => {
-    if (config?.meta !== undefined) {
-      const metaValue = config.meta;
-      setMeta(metaValue.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      }));
-    }
-  }, [config?.meta]);
-
-  // Inicializar metas semanais apenas uma vez quando carregadas
-  useEffect(() => {
-    if (metas.length > 0 && Object.keys(metasSemanais).length === 0) {
-      const metasObj: Record<string, string> = {};
-      metricasDisponiveis.forEach(metrica => {
-        const valor = getMetaValue(metrica.key);
-        metasObj[metrica.key] = valor > 0 ? formatValue(valor, metrica.format) : '';
+    if (!loading) {
+      setLocalMetaMensal(dbMetaMensal.toString());
+      
+      const valObj: Record<string, string> = {};
+      metasSemanais.forEach(m => {
+        valObj[m.metrica] = m.valor_meta.toString();
       });
-      setMetasSemanais(metasObj);
+      setValoresMetas(valObj);
     }
-  }, [metas.length]);
+  }, [loading, dbMetaMensal, metasSemanais]);
 
-  const form = useForm<z.infer<typeof vendedorSchema>>({
-    resolver: zodResolver(vendedorSchema),
-    defaultValues: {
-      nome: "",
-      email: "",
-      ativo: true,
-    },
-  });
-
-  const formatCurrency = (value: string) => {
-    const numbers = value.replace(/\D/g, "");
-    const amount = parseFloat(numbers) / 100;
-    return amount.toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
+  const handleMetaSemanalChange = (metrica: string, valor: string) => {
+    setValoresMetas(prev => ({ ...prev, [metrica]: valor }));
+    setAlteracoesMetas(prev => ({ ...prev, [metrica]: valor }));
   };
 
-  const handleMetaChange = (value: string) => {
-    const formatted = formatCurrency(value);
-    setMeta(formatted);
-  };
-
-  const handleMetaSemanalChange = (metricaKey: string, value: string, format?: 'currency' | 'number' | 'hours') => {
-    // Permitir digitação livre, sem formatação automática
-    setMetasSemanais(prev => ({
-      ...prev,
-      [metricaKey]: value
-    }));
-  };
-
-  const handleSaveMetaSemanal = async (metricaKey: string, format?: 'currency' | 'number' | 'hours') => {
-    const valorString = metasSemanais[metricaKey] || '';
-    
-    // Se o campo estiver vazio, salvar como 0 (remove a meta)
-    if (valorString.trim() === '') {
-      try {
-        const result = await updateMetaSemanal(metricaKey, 0);
-        if (result.success) {
-          toast.success("Meta removida com sucesso!");
-          setMetasSemanais(prev => ({
-            ...prev,
-            [metricaKey]: ''
-          }));
-        } else {
-          toast.error(result.error || "Erro ao remover meta");
-        }
-      } catch (error) {
-        toast.error("Erro ao remover meta");
-        console.error("Erro ao remover meta:", error);
-      }
+  const onSalvarMetaMensal = () => {
+    const valor = parseFloat(localMetaMensal);
+    if (isNaN(valor) || valor < 0) {
+      toast.error('Valor da meta inválido');
       return;
     }
+    salvarMetaMensal(valor);
+  };
 
-    let valorNumerico = 0;
-
-    if (format === 'currency') {
-      // Para moeda, aceitar tanto vírgula quanto ponto como separador decimal
-      const cleanValue = valorString.replace(/[^\d,\.]/g, "").replace(",", ".");
-      valorNumerico = parseFloat(cleanValue);
-    } else if (format === 'hours') {
-      // Para horas, extrair apenas números
-      const cleanValue = valorString.replace(/[^\d,\.]/g, "").replace(",", ".");
-      valorNumerico = parseFloat(cleanValue);
-    } else {
-      // Para números, aceitar vírgula e ponto
-      const cleanValue = valorString.replace(/[^\d,\.]/g, "").replace(",", ".");
-      valorNumerico = parseFloat(cleanValue);
-    }
-
-    if (isNaN(valorNumerico) || valorNumerico < 0) {
-      toast.error("Valor inválido");
-      return;
-    }
-
-    try {
-      const result = await updateMetaSemanal(metricaKey, valorNumerico);
-      if (result.success) {
-        toast.success("Meta semanal atualizada com sucesso!");
-        // Atualizar o valor formatado no estado após salvar
-        const valorFormatado = formatValue(valorNumerico, format);
-        setMetasSemanais(prev => ({
-          ...prev,
-          [metricaKey]: valorFormatado
-        }));
-      } else {
-        toast.error(result.error || "Erro ao atualizar meta");
-      }
-    } catch (error) {
-      toast.error("Erro ao atualizar meta semanal");
-      console.error("Erro ao atualizar meta semanal:", error);
+  const onSalvarTodasMetas = async () => {
+    const success = await salvarTodasMetas(alteracoesMetas);
+    if (success) {
+      setAlteracoesMetas({});
     }
   };
 
-  const handleSaveMeta = async () => {
-    const valorNumerico = parseFloat(
-      meta.replace(/[^\d,]/g, "").replace(",", ".")
-    );
-
-    if (isNaN(valorNumerico) || valorNumerico <= 0) {
-      toast.error("Valor inválido");
-      return;
-    }
-
-    try {
-      await updateMeta(valorNumerico);
-      toast.success("Meta mensal atualizada com sucesso!");
-    } catch (error) {
-      toast.error("Erro ao atualizar meta mensal");
-      console.error("Erro ao atualizar meta:", error);
+  const onAdicionarVendedor = async () => {
+    if (!novoNome.trim() || !novoEmail.trim()) return;
+    const success = await adicionarVendedor(novoNome, novoEmail);
+    if (success) {
+      setNovoNome('');
+      setNovoEmail('');
     }
   };
 
-  const onSubmit = async (values: z.infer<typeof vendedorSchema>) => {
-    try {
-      await addVendedor({
-        nome: values.nome,
-        email: values.email,
-        ativo: values.ativo,
-      });
-      toast.success("Vendedor adicionado com sucesso!");
-      form.reset();
-    } catch (error) {
-      toast.error("Erro ao adicionar vendedor");
-      console.error("Erro ao adicionar vendedor:", error);
-    }
+  const formatCurrency = (val: string | number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(val));
   };
 
-  const handleEdit = (vendedor: Vendedor) => {
-    setEditingId(vendedor.id);
-    setEditData({ ...vendedor });
-  };
-
-  const handleSaveEdit = async () => {
-    if (editData && editingId) {
-      try {
-        await updateVendedor(editingId, editData);
-        toast.success("Vendedor atualizado!");
-        setEditingId(null);
-        setEditData(null);
-      } catch (error) {
-        toast.error("Erro ao atualizar vendedor");
-        console.error("Erro ao atualizar vendedor:", error);
-      }
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditData(null);
-  };
-
-  const handleRemove = async (id: string) => {
-    if (confirm("Deseja realmente remover este vendedor?")) {
-      try {
-        await deleteVendedor(id);
-        toast.success("Vendedor removido!");
-      } catch (error) {
-        toast.error("Erro ao remover vendedor");
-        console.error("Erro ao remover vendedor:", error);
-      }
-    }
-  };
-
-  // Mostrar loading enquanto os dados estão carregando
-  if (configLoading || vendedoresLoading || metasLoading) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-background p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-card rounded-lg p-8 shadow-lg">
-            <div className="flex items-center gap-3 mb-8">
-              <Settings className="h-8 w-8 text-primary" />
-              <h1 className="text-3xl font-bold text-foreground">Configurações</h1>
-            </div>
-            <div className="flex items-center justify-center py-8">
-              <div className="text-muted-foreground">Carregando configurações...</div>
-            </div>
-          </div>
+      <PageLayout>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[#a3e635]" />
         </div>
-      </div>
+      </PageLayout>
     );
   }
 
+  const tabs = [
+    { id: 'geral',  label: 'Geral',   icon: SlidersHorizontal },
+    { id: 'metas',  label: 'Metas',   icon: Target            },
+    { id: 'equipe', label: 'Equipe',  icon: Users             },
+  ];
+
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-card rounded-lg p-8 shadow-lg">
-          <div className="flex items-center gap-3 mb-8">
-            <Settings className="h-8 w-8 text-primary" />
-            <h1 className="text-3xl font-bold text-foreground">Configurações</h1>
-          </div>
+    <PageLayout>
+      <PageHeader
+        icon={<Settings className="text-[#a3e635]" size={18} />}
+        title="Configurações"
+        subtitle="Ajustes de metas, equipe e parâmetros do sistema"
+      />
 
-          {/* Meta Mensal */}
-          <section className="mb-12">
-            <h2 className="text-xl font-semibold text-foreground mb-4">
-              Meta Mensal
-            </h2>
-            <div className="flex gap-4 items-end">
-              <div className="flex-1">
-                <label className="text-sm text-muted-foreground mb-2 block">
-                  Valor da meta (R$)
-                </label>
-                <Input
-                  value={meta}
-                  onChange={(e) => handleMetaChange(e.target.value)}
-                  placeholder="R$ 0,00"
-                  className="text-lg"
-                />
-              </div>
-              <Button
-                onClick={handleSaveMeta}
-                className="bg-primary hover:bg-primary/90"
-              >
-                Salvar Meta
-              </Button>
-            </div>
-          </section>
+      {/* Tabs Layout */}
+      <div className="flex gap-1 border-b border-white/5 px-6 pt-2">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setTabAtiva(id)}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all -mb-px outline-none
+              ${tabAtiva === id 
+                ? 'border-[#a3e635] text-white' 
+                : 'border-transparent text-white/30 hover:text-white/50'
+              }`}
+          >
+            <Icon size={14} />
+            {label}
+          </button>
+        ))}
+      </div>
 
-          {/* Metas Semanais */}
-          <section className="mb-12">
-            <div className="flex items-center gap-3 mb-6">
-              <Target className="h-6 w-6 text-primary" />
-              <h2 className="text-xl font-semibold text-foreground">
-                Metas Semanais
-              </h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {metricasDisponiveis.map((metrica) => (
-                <Card key={metrica.key} className="border border-border">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">{metrica.label}</CardTitle>
-                    <CardDescription className="text-sm">
-                      {metrica.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground mb-2 block">
-                        Meta {metrica.format === 'currency' ? '(R$)' : metrica.format === 'hours' ? '(horas)' : ''}
-                      </label>
-                      <Input
-                        value={metasSemanais[metrica.key] || ''}
-                        onChange={(e) => handleMetaSemanalChange(metrica.key, e.target.value, metrica.format)}
-                        placeholder={
-                          metrica.format === 'currency' ? 'R$ 0,00' : 
-                          metrica.format === 'hours' ? '0h' : '0'
-                        }
-                        className="text-sm"
-                      />
-                    </div>
-                    <Button
-                      onClick={() => handleSaveMetaSemanal(metrica.key, metrica.format)}
-                      size="sm"
-                      className="w-full bg-primary hover:bg-primary/90"
-                    >
-                      <Save className="h-4 w-4 mr-2" />
-                      Salvar Meta
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
-
-          {/* Vendedores */}
-          <section>
-            <h2 className="text-xl font-semibold text-foreground mb-4">
-              Cadastro de Vendedores
-            </h2>
-
-            <Form {...form}>
-              <form
-                onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-4 mb-8 p-6 bg-muted/50 rounded-lg"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="nome"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nome</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Nome do vendedor" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>E-mail</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="email"
-                            placeholder="email@exemplo.com"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+      <div className="p-6 max-w-4xl mx-auto">
+        {/* TAB 1: GERAL */}
+        {tabAtiva === 'geral' && (
+          <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
+            <SettingsSection
+              title="Meta Mensal de Vendas"
+              description="Define o valor alvo de faturamento mensal exibido no Dashboard e Financeiro."
+            >
+              <div className="flex items-center gap-3 max-w-sm">
+                <div className="relative flex-1 group">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 text-sm font-bold group-focus-within:text-[#a3e635] transition-colors">
+                    R$
+                  </span>
+                  <input
+                    type="number"
+                    value={localMetaMensal}
+                    onChange={e => setLocalMetaMensal(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full h-11 bg-black border-none rounded-xl pl-10 pr-4 text-white text-sm font-bold focus:ring-1 focus:ring-[#a3e635]/30 transition-all placeholder:text-white/10"
                   />
                 </div>
+                <button
+                  onClick={onSalvarMetaMensal}
+                  disabled={salvando || localMetaMensal === dbMetaMensal.toString()}
+                  className="h-11 px-6 rounded-xl bg-[#a3e635] hover:bg-[#84cc16] text-black text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] shadow-lg shadow-[#a3e635]/10"
+                >
+                  {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar'}
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 mt-3 px-1">
+                <Info size={12} className="text-white/20" />
+                <p className="text-white/25 text-[10px] font-bold uppercase tracking-widest">
+                  Atualmente definida em: {formatCurrency(dbMetaMensal)}
+                </p>
+              </div>
+            </SettingsSection>
 
-                <FormField
-                  control={form.control}
-                  name="ativo"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel>Vendedor ativo</FormLabel>
+            <SettingsSection
+              title="Preferências do Sistema"
+              description="Personalize o comportamento geral da plataforma."
+            >
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-white/2 rounded-2xl border border-white/5 opacity-50 cursor-not-allowed group">
+                  <div className="flex-1">
+                    <p className="text-white/80 text-sm font-bold">Modo Escuro (Padrão)</p>
+                    <p className="text-white/30 text-xs font-medium">Otimizado para o padrão NGX.</p>
+                  </div>
+                  <CheckCircle2 size={18} className="text-[#a3e635]" />
+                </div>
+                
+                <div className="flex items-center gap-3 p-4 bg-[#a3e635]/5 rounded-2xl border border-[#a3e635]/10 border-dashed">
+                  <AlertCircle size={16} className="text-[#a3e635]" />
+                  <p className="text-[#a3e635] text-xs font-bold leading-relaxed">
+                    Novas preferências de interface serão liberadas na próxima atualização.
+                  </p>
+                </div>
+              </div>
+            </SettingsSection>
+          </div>
+        )}
+
+        {/* TAB 2: METAS SEMANAIS */}
+        {tabAtiva === 'metas' && (
+          <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
+            <SettingsSection
+              title="Metas Semanais"
+              description="Valores de referência usados na página de Métricas da Semana. Apenas métricas ativas são exibidas."
+            >
+              <div className="bg-black/40 rounded-2xl border border-white/5 overflow-hidden">
+                <div className="flex flex-col divide-y divide-white/5">
+                  {metasSemanais.map(m => (
+                    <div key={m.metrica} className="flex items-center gap-4 p-5 hover:bg-white/2 transition-all group">
+                      <div className="flex-1">
+                        <p className="text-white/90 text-sm font-bold tracking-tight group-hover:text-white transition-colors">
+                          {m.metrica.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                        </p>
+                        <p className="text-white/30 text-xs font-medium mt-0.5 line-clamp-1">{m.descricao || 'Sem descrição definida.'}</p>
                       </div>
-                    </FormItem>
-                  )}
-                />
 
-                <Button type="submit" className="w-full md:w-auto">
-                  Adicionar Vendedor
-                </Button>
-              </form>
-            </Form>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={valoresMetas[m.metrica] || ''}
+                            onChange={e => handleMetaSemanalChange(m.metrica, e.target.value)}
+                            className="w-28 h-10 bg-black/60 border border-white/5 rounded-xl px-4 text-white text-sm font-bold text-right focus:outline-none focus:ring-1 focus:ring-[#a3e635]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-all"
+                            placeholder="0"
+                          />
+                        </div>
+                        <span className="text-white/20 text-[10px] font-black uppercase w-8 tracking-tighter">
+                          {m.unidade || (m.metrica.includes('mrr') || m.metrica.includes('finan') ? 'BRL' : 'UN')}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-            {/* Tabela de Vendedores */}
-            <div className="border border-border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>E-mail</TableHead>
-                    <TableHead className="text-center">Ativo</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {vendedores.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
-                        Nenhum vendedor cadastrado
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    vendedores.map((vendedor) => (
-                      <TableRow key={vendedor.id}>
-                        <TableCell>
-                          {editingId === vendedor.id ? (
-                            <Input
-                              value={editData?.nome || ""}
-                              onChange={(e) =>
-                                setEditData((prev) =>
-                                  prev ? { ...prev, nome: e.target.value } : null
-                                )
+                <div className="p-4 bg-white/2 border-t border-white/5 flex items-center justify-between">
+                  <div>
+                    {Object.keys(alteracoesMetas).length > 0 && (
+                      <p className="text-white/40 text-[11px] font-bold uppercase tracking-widest pl-2">
+                        {Object.keys(alteracoesMetas).length} meta{Object.keys(alteracoesMetas).length !== 1 ? 's' : ''} alterada{Object.keys(alteracoesMetas).length !== 1 ? 's' : ''}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={onSalvarTodasMetas}
+                    disabled={Object.keys(alteracoesMetas).length === 0 || salvando}
+                    className="h-10 px-6 rounded-xl bg-[#a3e635] hover:bg-[#84cc16] text-black text-sm font-bold transition-all disabled:opacity-20 disabled:cursor-not-allowed active:scale-[0.98] shadow-xl shadow-[#a3e635]/5"
+                  >
+                    {salvando ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : 'Salvar todas as metas'}
+                  </button>
+                </div>
+              </div>
+            </SettingsSection>
+          </div>
+        )}
+
+        {/* TAB 3: EQUIPE */}
+        {tabAtiva === 'equipe' && (
+          <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
+            <SettingsSection
+              title="Membros da Equipe"
+              description="Gerencie os vendedores e colaboradores com acesso ao painel."
+            >
+              <div className="flex flex-col gap-3 mb-10">
+                {vendedores.length === 0 ? (
+                  <div className="py-12 flex flex-col items-center justify-center bg-black/40 rounded-3xl border border-white/5 border-dashed">
+                    <Users className="text-white/10 mb-2" size={32} />
+                    <p className="text-white/30 text-xs font-bold uppercase tracking-widest">Nenhum membro encontrado</p>
+                  </div>
+                ) : (
+                  vendedores.map(v => (
+                    <div key={v.id} className="flex items-center gap-4 p-4 bg-black/40 rounded-2xl border border-white/5 hover:border-white/10 transition-all group">
+                      <div className="w-10 h-10 rounded-full bg-[#a3e635]/15 border border-[#a3e635]/25 flex items-center justify-center text-[#a3e635] font-black text-sm flex-shrink-0 group-hover:scale-110 transition-transform">
+                        {v.nome[0].toUpperCase()}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white/90 text-sm font-bold tracking-tight">{v.nome}</p>
+                        <p className="text-white/30 text-[11px] font-medium truncate">{v.email}</p>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest
+                          ${v.ativo ? 'bg-[#a3e635]/10 text-[#a3e635]' : 'bg-white/5 text-white/30'}
+                        `}>
+                          {v.ativo ? 'Ativo' : 'Inativo'}
+                        </span>
+                        
+                        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => toggleVendedorAtivo(v.id, v.ativo)}
+                            className="h-8 px-3 rounded-lg bg-white/5 border border-white/10 text-white/40 hover:text-white hover:bg-white/10 text-[10px] font-bold uppercase transition-all"
+                          >
+                            {v.ativo ? 'Desativar' : 'Ativar'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Remover ${v.nome} da equipe?`)) {
+                                deletarVendedor(v.id);
                               }
-                              className="h-8"
-                            />
-                          ) : (
-                            vendedor.nome
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {editingId === vendedor.id ? (
-                            <Input
-                              type="email"
-                              value={editData?.email || ""}
-                              onChange={(e) =>
-                                setEditData((prev) =>
-                                  prev ? { ...prev, email: e.target.value } : null
-                                )
-                              }
-                              className="h-8"
-                            />
-                          ) : (
-                            vendedor.email
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {editingId === vendedor.id ? (
-                            <Checkbox
-                              checked={editData?.ativo || false}
-                              onCheckedChange={(checked) =>
-                                setEditData((prev) =>
-                                  prev ? { ...prev, ativo: checked as boolean } : null
-                                )
-                              }
-                            />
-                          ) : (
-                            <Checkbox checked={vendedor.ativo} disabled />
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {editingId === vendedor.id ? (
-                            <div className="flex gap-2 justify-end">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={handleSaveEdit}
-                                className="h-8 w-8 text-primary hover:text-primary"
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={handleCancelEdit}
-                                className="h-8 w-8 text-muted-foreground"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="flex gap-2 justify-end">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleEdit(vendedor)}
-                                className="h-8 w-8 text-primary hover:text-primary"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleRemove(vendedor.id)}
-                                className="h-8 w-8 text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </section>
-        </div>
+                            }}
+                            className="w-8 h-8 rounded-lg bg-red-500/5 border border-red-500/10 text-red-400/40 hover:text-red-400 hover:bg-red-500/15 flex items-center justify-center transition-all"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="border-t border-white/5 pt-10">
+                <div className="flex items-center gap-2 mb-4">
+                  <UserPlus size={14} className="text-[#a3e635]" />
+                  <p className="text-white/50 text-[10px] font-black uppercase tracking-[0.2em]">Adicionar Novo Membro</p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    placeholder="Nome completo"
+                    value={novoNome}
+                    onChange={e => setNovoNome(e.target.value)}
+                    className="flex-1 h-12 bg-black border-none rounded-xl px-5 text-white text-sm font-medium placeholder:text-white/10 focus:ring-1 focus:ring-[#a3e635]/20 transition-all"
+                  />
+                  <input
+                    placeholder="email@empresa.com"
+                    value={novoEmail}
+                    onChange={e => setNovoEmail(e.target.value)}
+                    className="flex-1 h-12 bg-black border-none rounded-xl px-5 text-white text-sm font-medium placeholder:text-white/10 focus:ring-1 focus:ring-[#a3e635]/20 transition-all"
+                  />
+                  <button
+                    onClick={onAdicionarVendedor}
+                    disabled={!novoNome.trim() || !novoEmail.trim() || salvando}
+                    className="h-12 px-6 rounded-xl bg-[#a3e635] hover:bg-[#84cc16] text-black text-sm font-black transition-all disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-2xl shadow-[#a3e635]/5 group"
+                  >
+                    {salvando ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : (
+                      <>
+                        <UserPlus size={16} className="group-hover:scale-125 transition-transform" />
+                        Adicionar
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </SettingsSection>
+          </div>
+        )}
       </div>
-    </div>
+    </PageLayout>
   );
 };
 

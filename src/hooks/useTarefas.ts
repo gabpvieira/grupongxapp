@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
+import { Tarefa } from '@/types/tarefas'
+import { subDays } from 'date-fns'
 
 type TarefaBase = Database['public']['Tables']['tarefas']['Row']
 type TarefaInsert = Database['public']['Tables']['tarefas']['Insert']
@@ -10,22 +12,20 @@ type ChecklistItem = Database['public']['Tables']['tarefa_checklist']['Row']
 type ChecklistInsert = Database['public']['Tables']['tarefa_checklist']['Insert']
 type ChecklistUpdate = Database['public']['Tables']['tarefa_checklist']['Update']
 
-// Tipo estendido para tarefa com checklist
-export type Tarefa = TarefaBase & {
-  checklist: Array<ChecklistItem & { done: boolean }>
-}
-
 export function useTarefas() {
   const [tarefas, setTarefas] = useState<Tarefa[]>([])
   const [tarefasCompletas, setTarefasCompletas] = useState<TarefaCompleta[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchTarefas = async () => {
+  const fetchTarefas = useCallback(async () => {
     try {
       setLoading(true)
+      const JANELA_DIAS = 30
+      const limite = subDays(new Date(), JANELA_DIAS)
+      
       const { data, error } = await supabase
-        .from('tarefas')
+        .from('tarefas_completas')
         .select(`
           *,
           checklist:tarefa_checklist(
@@ -35,39 +35,94 @@ export function useTarefas() {
             ordem
           )
         `)
+        .or(`status.neq.concluido,and(status.eq.concluido,updated_at.gte.${limite.toISOString()})`)
         .order('created_at', { ascending: false })
 
       if (error) throw error
       
-      // Mapear os dados para incluir o checklist com as propriedades 'done' e 'text'
-      const tarefasWithChecklist = (data || []).map(tarefa => ({
+      const tarefasMapped = (data || []).map(tarefa => ({
         ...tarefa,
         checklist: (tarefa.checklist || []).map((item: any) => ({
           ...item,
           done: item.concluido,
           text: item.texto
         }))
-      }))
+      })) as unknown as Tarefa[]
       
-      setTarefas(tarefasWithChecklist)
+      setTarefas(tarefasMapped)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar tarefas')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const fetchTarefasCompletas = async () => {
+  const refetchTarefa = async (id: string) => {
     try {
       const { data, error } = await supabase
         .from('tarefas_completas')
-        .select('*')
-        .order('created_at', { ascending: false })
+        .select(`
+          *,
+          checklist:tarefa_checklist(
+            id,
+            texto,
+            concluido,
+            ordem
+          )
+        `)
+        .eq('id', id)
+        .single()
 
       if (error) throw error
-      setTarefasCompletas(data || [])
+      
+      const tarefaMapped = {
+        ...data,
+        checklist: (data.checklist || []).map((item: any) => ({
+          ...item,
+          done: item.concluido,
+          text: item.texto
+        }))
+      } as unknown as Tarefa
+      
+      setTarefas(prev => prev.map(t => t.id === id ? tarefaMapped : t))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar tarefas completas')
+      console.error('Erro ao fazer refetch da tarefa:', err)
+    }
+  }
+
+  const fetchArquivadas = async () => {
+    try {
+      const JANELA_DIAS = 30
+      const limite = subDays(new Date(), JANELA_DIAS)
+
+      const { data, error } = await supabase
+        .from('tarefas_completas')
+        .select(`
+          *,
+          checklist:tarefa_checklist(
+            id,
+            texto,
+            concluido,
+            ordem
+          )
+        `)
+        .eq('status', 'concluido')
+        .lt('updated_at', limite.toISOString())
+        .order('updated_at', { ascending: false })
+
+      if (error) throw error
+      
+      return (data || []).map(tarefa => ({
+        ...tarefa,
+        checklist: (tarefa.checklist || []).map((item: any) => ({
+          ...item,
+          done: item.concluido,
+          text: item.texto
+        }))
+      })) as unknown as Tarefa[]
+    } catch (err) {
+      console.error('Erro ao buscar arquivadas:', err)
+      return []
     }
   }
 
@@ -80,7 +135,7 @@ export function useTarefas() {
         .single()
 
       if (error) throw error
-      setTarefas(prev => [data, ...prev])
+      await fetchTarefas()
       return data
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao adicionar tarefa')
@@ -98,7 +153,7 @@ export function useTarefas() {
         .single()
 
       if (error) throw error
-      setTarefas(prev => prev.map(t => t.id === id ? data : t))
+      await refetchTarefa(id)
       return data
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao atualizar tarefa')
@@ -108,28 +163,32 @@ export function useTarefas() {
 
   const updateTarefaCompleta = async (tarefa: Tarefa) => {
     try {
-      // Extrair checklist da tarefa
       const { checklist, ...tarefaData } = tarefa
       
-      // Atualizar dados da tarefa (excluindo checklist)
+      const cleanTarefaData = { ...tarefaData };
+      delete (cleanTarefaData as any).responsavel_nome;
+      delete (cleanTarefaData as any).responsavel_email;
+      delete (cleanTarefaData as any).total_checklist;
+      delete (cleanTarefaData as any).checklist_concluidos;
+      delete (cleanTarefaData as any).checklist;
+      delete (cleanTarefaData as any).done;
+      delete (cleanTarefaData as any).text;
+
       const { data: updatedTarefa, error: tarefaError } = await supabase
         .from('tarefas')
-        .update(tarefaData)
+        .update(cleanTarefaData)
         .eq('id', tarefa.id)
         .select()
         .single()
 
       if (tarefaError) throw tarefaError
 
-      // Sempre deletar itens existentes do checklist primeiro
       await supabase
         .from('tarefa_checklist')
         .delete()
         .eq('tarefa_id', tarefa.id)
 
-      // Inserir novos itens do checklist se existirem e não estiverem vazios
       if (checklist && checklist.length > 0) {
-        // Filtrar itens válidos (com texto não vazio)
         const validChecklistItems = checklist
           .filter(item => (item.text || item.texto) && (item.text || item.texto).trim() !== '')
           .map((item, index) => ({
@@ -139,7 +198,6 @@ export function useTarefas() {
             ordem: index
           }))
 
-        // Só inserir se houver itens válidos
         if (validChecklistItems.length > 0) {
           const { error: checklistError } = await supabase
             .from('tarefa_checklist')
@@ -149,9 +207,7 @@ export function useTarefas() {
         }
       }
 
-      // Recarregar tarefas para obter dados atualizados com checklist
-      await fetchTarefas()
-      
+      await refetchTarefa(tarefa.id)
       return updatedTarefa
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao atualizar tarefa completa')
@@ -161,13 +217,11 @@ export function useTarefas() {
 
   const deleteTarefa = async (id: string) => {
     try {
-      // Primeiro deletar checklist items
       await supabase
         .from('tarefa_checklist')
         .delete()
         .eq('tarefa_id', id)
 
-      // Depois deletar a tarefa
       const { error } = await supabase
         .from('tarefas')
         .delete()
@@ -181,57 +235,6 @@ export function useTarefas() {
     }
   }
 
-  const startTimer = async (id: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('tarefas')
-        .update({
-          esta_executando: true,
-          inicio_execucao: new Date().toISOString(),
-          status: 'em-andamento'
-        })
-        .eq('id', id)
-        .select()
-        .single()
-
-      if (error) throw error
-      setTarefas(prev => prev.map(t => t.id === id ? data : t))
-      return data
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao iniciar timer')
-      throw err
-    }
-  }
-
-  const stopTimer = async (id: string) => {
-    try {
-      const tarefa = tarefas.find(t => t.id === id)
-      if (!tarefa || !tarefa.inicio_execucao) return
-
-      const tempoDecorrido = Math.floor((Date.now() - new Date(tarefa.inicio_execucao).getTime()) / 1000)
-      const novoTempoTotal = tarefa.tempo_rastreado + tempoDecorrido
-
-      const { data, error } = await supabase
-        .from('tarefas')
-        .update({
-          esta_executando: false,
-          inicio_execucao: null,
-          tempo_rastreado: novoTempoTotal
-        })
-        .eq('id', id)
-        .select()
-        .single()
-
-      if (error) throw error
-      setTarefas(prev => prev.map(t => t.id === id ? data : t))
-      return data
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao parar timer')
-      throw err
-    }
-  }
-
-  // Funções para checklist
   const getChecklistItems = async (tarefaId: string) => {
     try {
       const { data, error } = await supabase
@@ -295,7 +298,6 @@ export function useTarefas() {
     }
   }
 
-  // Funções utilitárias
   const getTarefasPorStatus = (status: 'a-fazer' | 'em-andamento' | 'concluido') => {
     return tarefas.filter(t => t.status === status)
   }
@@ -315,20 +317,16 @@ export function useTarefas() {
 
   useEffect(() => {
     fetchTarefas()
-    fetchTarefasCompletas()
-  }, [])
+  }, [fetchTarefas])
 
   return {
     tarefas,
-    tarefasCompletas,
     loading,
     error,
     addTarefa,
     updateTarefa,
     updateTarefaCompleta,
     deleteTarefa,
-    startTimer,
-    stopTimer,
     getChecklistItems,
     addChecklistItem,
     updateChecklistItem,
@@ -337,6 +335,8 @@ export function useTarefas() {
     getTarefasPorPrioridade,
     getTarefasVencidas,
     getTarefasExecutando,
-    refetch: fetchTarefas
+    refetch: fetchTarefas,
+    refetchTarefa,
+    fetchArquivadas
   }
 }

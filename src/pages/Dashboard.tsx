@@ -1,38 +1,24 @@
-import { useEffect, useState } from "react";
+import { useDashboard } from "@/hooks/useDashboard";
 import { CircularGauge } from "@/components/CircularGauge";
-import { useVendas } from "@/hooks/useVendas";
-import { useConfig } from "@/hooks/useConfig";
+import KpiCard from "@/components/dashboard/KpiCard";
+import RankingVendedores from "@/components/dashboard/RankingVendedores";
+import UltimosLancamentos from "@/components/dashboard/UltimosLancamentos";
+import TarefasResumo from "@/components/dashboard/TarefasResumo";
+import EvolucaoMensal from "@/components/dashboard/EvolucaoMensal";
+import { 
+  DollarSign, 
+  Briefcase, 
+  Target, 
+  Loader2, 
+  AlertCircle 
+} from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { PageLayout } from '@/components/layout/PageLayout';
+import { PageHeader } from '@/components/layout/PageHeader';
 
 const Dashboard = () => {
-  const { getVendasPorMes } = useVendas();
-  const { config } = useConfig();
-  const [totalVendas, setTotalVendas] = useState(0);
-
-  const currentMonth = new Date().toLocaleDateString("pt-BR", {
-    month: "long",
-  }).toUpperCase();
-
-  useEffect(() => {
-    const updateTotal = () => {
-      const now = new Date();
-      const vendasMes = getVendasPorMes(now.getMonth(), now.getFullYear());
-      const total = vendasMes.reduce(
-        (sum, v) => sum + (typeof v.valor === 'number' ? v.valor : Number(v.valor)),
-        0
-      );
-      setTotalVendas(total);
-    };
-
-    updateTotal();
-    const interval = setInterval(updateTotal, 1000);
-
-    return () => clearInterval(interval);
-  }, [getVendasPorMes]);
-
-  // Force re-render when config changes
-  useEffect(() => {
-    // This effect will trigger when config changes
-  }, [config]);
+  const { data, loading, error } = useDashboard();
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -41,48 +27,132 @@ const Dashboard = () => {
     }).format(val);
   };
 
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-8">
-      <div className="flex flex-col items-center gap-8 max-w-4xl w-full">
-        {/* Logo */}
-        <img
-          src="/logo.png"
-          alt="NGX Growth"
-          className="h-20 object-contain"
-        />
-
-        {/* Month */}
-        <p className="text-xl text-muted-foreground uppercase tracking-widest font-normal">
-          Mês de {currentMonth}
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 text-[#a3e635] animate-spin" />
+        <p className="text-white/40 font-syne animate-pulse uppercase tracking-[0.3em] text-xs">
+          Carregando indicadores...
         </p>
+      </div>
+    );
+  }
 
-        {/* Gauge */}
-        <div className="flex flex-col items-center gap-6">
-          <CircularGauge
-            value={totalVendas}
-            max={config?.meta || 50000}
-            label="TOTAL EM VENDAS"
-          />
+  if (error || !data) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4 p-8 text-center">
+        <AlertCircle className="w-12 h-12 text-rose-500 mb-2" />
+        <h2 className="text-white text-xl font-bold">Oops! Algo deu errado</h2>
+        <p className="text-white/40 max-w-md">{error || "Não conseguimos carregar os dados do painel."}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-4 px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all text-sm font-bold"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  const percentMeta = Math.min((data.totalVendas / data.metaMensal) * 100, 100);
+  const currentMonthName = format(new Date(), 'MMMM', { locale: ptBR });
+
+  return (
+    <PageLayout>
+      <PageHeader
+        icon={<Target size={18} className="text-[#a3e635]" />}
+        title="Dashboard"
+        subtitle={`Resultados de ${currentMonthName}`}
+      />
+
+      <div className="p-6 space-y-8">
+        {/* Dashboard Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* Total Value - displayed below gauge */}
-          <div className="text-center -mt-2">
-            <p className="text-7xl font-bold text-[#acf500] tracking-tight">
-              {formatCurrency(totalVendas)}
-            </p>
+          {/* Left Column: Metrics & Main Gauge */}
+          <div className="lg:col-span-8 space-y-6">
+            
+            {/* KPI Cards Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <KpiCard 
+                title="Total em Vendas" 
+                value={formatCurrency(data.totalVendas)}
+                icon={DollarSign}
+                description="Acumulado do mês"
+              />
+              <KpiCard 
+                title="Negócios Fechados" 
+                value={data.qtdNegocios}
+                icon={Briefcase}
+                description="Contratos ativos"
+              />
+              <KpiCard 
+                title="Progresso da Meta" 
+                value={`${percentMeta.toFixed(1)}%`}
+                icon={Target}
+                description={`Meta: ${formatCurrency(data.metaMensal)}`}
+              />
+            </div>
+
+            {/* Gauge and Evolution Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-[#0d0d0d] border border-white/5 rounded-xl p-8 flex flex-col items-center justify-center min-h-[400px]">
+                <CircularGauge 
+                  value={data.totalVendas} 
+                  max={data.metaMensal} 
+                  label="Vendas vs Meta" 
+                />
+                <div className="text-center mt-6">
+                  <p className="text-5xl font-extrabold text-[#a3e635] tracking-tighter">
+                    {formatCurrency(data.totalVendas)}
+                  </p>
+                  <p className="text-xs font-bold text-white/20 uppercase tracking-[0.3em] mt-2">
+                    Total em Vendas
+                  </p>
+                </div>
+              </div>
+
+              <EvolucaoMensal 
+                data={data.evolucao} 
+                meta={data.metaMensal} 
+              />
+            </div>
+
+            {/* Bottom Row: Latest Transactions */}
+            <UltimosLancamentos lancamentos={data.ultimosLancamentos} />
+          </div>
+
+          {/* Right Column: Ranking & Tasks */}
+          <div className="lg:col-span-4 space-y-6">
+            <RankingVendedores ranking={data.ranking} />
+            <TarefasResumo tarefas={data.tarefas} />
+            
+            {/* Quick Actions / Status Footer */}
+            <div className="bg-[#a3e635]/5 border border-[#a3e635]/10 rounded-xl p-6">
+              <p className="text-[#a3e635] text-[10px] font-black uppercase tracking-[0.2em] mb-4">
+                Sistemas Grupo NGX
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-white/60 text-xs font-bold">Banco de Dados</p>
+                  <p className="text-[#a3e635] text-[10px] flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#a3e635] animate-pulse" />
+                    Operacional
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-white/60 text-xs font-bold">Sessão</p>
+                  <p className="text-[#a3e635] text-[10px] flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#a3e635]" />
+                    Protegida
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-
-        {/* Meta info */}
-        <div className="text-center mt-4">
-          <p className="text-sm text-muted-foreground uppercase tracking-wider mb-1 font-medium">
-            Meta Mensal
-          </p>
-          <p className="text-xl font-semibold text-primary">
-            {formatCurrency(config?.meta || 50000)}
-          </p>
-        </div>
       </div>
-    </div>
+    </PageLayout>
   );
 };
 
