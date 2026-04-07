@@ -58,12 +58,32 @@ export default function PropostaViewer() {
     );
   }
 
+  const iframeContent = `
+    <html>
+      <head>
+        <style>
+          html, body { 
+            overflow-x: hidden !important; 
+            max-width: 100vw !important; 
+            margin: 0; 
+            padding: 0;
+          }
+        </style>
+      </head>
+      <body>
+        ${proposta.html_content}
+      </body>
+    </html>
+  `;
+
   return (
-    <div className="fixed inset-0 w-full h-full bg-white overflow-hidden">
+    <div className="fixed inset-0 w-full h-full bg-white overflow-hidden" 
+      style={{ overflowX: 'hidden', width: '100%', maxWidth: '100vw' }}>
       <iframe
-        srcDoc={proposta.html_content}
+        srcDoc={iframeContent}
         title={proposta.titulo}
         className="w-full h-full border-none"
+        style={{ width: '100%', border: 'none', overflowX: 'hidden' }}
         sandbox="allow-scripts allow-same-origin allow-popups"
       />
     </div>
