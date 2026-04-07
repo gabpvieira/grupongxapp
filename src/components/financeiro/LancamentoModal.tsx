@@ -27,7 +27,7 @@ const LancamentoModal = ({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl bg-black border-white/10 text-white p-8">
         <DialogHeader className="mb-6">
-          <DialogTitle className="text-2xl font-bold tracking-tight font-syne">
+          <DialogTitle className="text-2xl font-bold tracking-tight ">
             Editar Lançamento
           </DialogTitle>
           <DialogDescription className="text-white/40 uppercase text-[10px] font-black tracking-widest mt-2">
@@ -49,3 +49,4 @@ const LancamentoModal = ({
 };
 
 export default LancamentoModal;
+

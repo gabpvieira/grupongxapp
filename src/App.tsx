@@ -20,6 +20,8 @@ import Servicos from "./pages/Servicos";
 import Orcamentos from "./pages/Orcamentos";
 import Propostas from "./pages/admin/Propostas";
 import PropostaViewer from "./pages/public/PropostaViewer";
+import Clientes from "./pages/Clientes";
+
 
 
 const queryClient = new QueryClient();
@@ -46,6 +48,7 @@ const App = () => {
                   <Route path="dashboard" element={<Index />} />
                   <Route path="financeiro" element={<Financeiro />} />
                   <Route path="crm" element={<Crm />} />
+                  <Route path="clientes" element={<Clientes />} />
                   <Route path="servicos" element={<Servicos />} />
                   <Route path="orcamentos" element={<Orcamentos />} />
                   <Route path="propostas" element={<Propostas />} />

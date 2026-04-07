@@ -10,7 +10,7 @@ const PublicPlaceholder = () => {
           className="h-20 w-auto object-contain"
         />
         <div className="text-center space-y-2">
-          <h1 className="text-white text-3xl font-bold tracking-tighter sm:text-4xl font-syne">
+          <h1 className="text-white text-3xl font-bold tracking-tighter sm:text-4xl ">
             Grupo NGX
           </h1>
           <p className="text-white/40 text-lg font-light tracking-wide italic">
@@ -24,3 +24,4 @@ const PublicPlaceholder = () => {
 };
 
 export default PublicPlaceholder;
+

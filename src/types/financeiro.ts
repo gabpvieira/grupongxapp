@@ -4,7 +4,9 @@ export type TipoAjuste = 'desconto' | 'acrescimo';
 export interface VendaCompleta {
   id: string;
   cliente: string;
+  cliente_id: string | null;
   servico: string;
+
   data_fechamento: string;
   recorrente: boolean;
   quantidade_meses: number | null;

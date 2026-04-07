@@ -28,9 +28,11 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'Segoe UI', 'Roboto', 'system-ui', 'sans-serif'],
+        sans: ['Satoshi', '__no_fallback'],
       },
+
       colors: {
+        'ngx-bg': '#001425',
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

@@ -17,7 +17,8 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
   { label: "Dashboard", sub: "Visão geral", icon: LayoutDashboard, path: "/app/dashboard" },
-  { label: "CRM", sub: "Leads & Clientes", icon: Users, path: "/app/crm" },
+  { label: "CRM", sub: "Leads & Atendimento", icon: Users, path: "/app/crm" },
+  { label: "Clientes", sub: "Base de dados", icon: Users, path: "/app/clientes" },
   { label: "Serviços", sub: "Catálogo e preços", icon: Briefcase, path: "/app/servicos" },
   { label: "Orçamentos", sub: "Propostas e contratos", icon: FileText, path: "/app/orcamentos" },
   { label: "Propostas", sub: "Páginas HTML", icon: Globe, path: "/admin/propostas" },

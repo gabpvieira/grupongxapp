@@ -4,23 +4,21 @@ interface CircularGaugeProps {
   value: number;
   max: number;
   label: string;
+  children?: React.ReactNode;
 }
 
-export const CircularGauge = ({ value, max, label }: CircularGaugeProps) => {
+export const CircularGauge = ({ value, max, label, children }: CircularGaugeProps) => {
   const [animatedPercentage, setAnimatedPercentage] = useState(0);
-  const percentage = Math.min((value / max) * 100, 100);
-  const width = 500;
-  const height = 300;
-  const strokeWidth = 45;
-  const radius = 180;
-  const centerX = width / 2;
-  const centerY = height - 30;
+  const percentage = Math.min(value / max, 1); // 0 a 1, cap em 100%
   
-  // Semicircle path (180 degrees)
-  const startAngle = Math.PI; // Start at left (180 degrees)
-  const endAngle = 2 * Math.PI; // End at right (360 degrees = 0 degrees)
-  const arcLength = Math.PI * radius; // Half circumference
-  
+  const cx = 150;        // centro X do viewBox 300x160
+  const cy = 150;        // centro Y (posicionado na base para semicírculo)
+  const raio = 120;      // raio do arco
+  const espessura = 28;  // stroke-width (ajustado para visual premium)
+
+  // Circunferência do semicírculo (180°)
+  const semicircunferencia = Math.PI * raio;
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setAnimatedPercentage(percentage);
@@ -28,61 +26,57 @@ export const CircularGauge = ({ value, max, label }: CircularGaugeProps) => {
     return () => clearTimeout(timer);
   }, [percentage]);
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(val);
-  };
-
-  const createArcPath = (startAngle: number, endAngle: number, radius: number) => {
-    const start = {
-      x: centerX + radius * Math.cos(startAngle),
-      y: centerY + radius * Math.sin(startAngle),
-    };
-    const end = {
-      x: centerX + radius * Math.cos(endAngle),
-      y: centerY + radius * Math.sin(endAngle),
-    };
-    const largeArcFlag = endAngle - startAngle <= Math.PI ? "0" : "1";
-    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`;
-  };
-
-  const fillEndAngle = startAngle + (animatedPercentage / 100) * Math.PI;
+  // Arco de progresso: dashoffset move de semicircunferencia (0%) até 0 (100%)
+  const dashOffset = semicircunferencia * (1 - animatedPercentage);
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="relative">
-        <svg width={width} height={height} className="overflow-visible">
-          {/* Background arc - subtle border */}
-          <path
-            d={createArcPath(startAngle, endAngle, radius)}
+    <div className="flex flex-col items-center w-full overflow-hidden">
+      <div className="relative w-full flex justify-center">
+        <svg 
+          viewBox="0 0 300 165" 
+          className="w-full h-auto max-w-[500px] overflow-visible"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {/* Trilha de fundo (cinza sutil) */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={raio}
             fill="none"
-            stroke="rgba(255, 255, 255, 0.03)"
-            strokeWidth={strokeWidth}
-            strokeLinecap="butt"
+            stroke="rgba(255, 255, 255, 0.05)"
+            strokeWidth={espessura}
+            strokeDasharray={`${semicircunferencia} ${semicircunferencia}`}
+            strokeDashoffset={0}
+            strokeLinecap="round"
+            transform={`rotate(-180 ${cx} ${cy})`}
           />
           
-          {/* Filled arc (vibrant green) */}
-          <path
-            d={createArcPath(startAngle, fillEndAngle, radius)}
+          {/* Arco de progresso (lime-400 com brilho) */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r={raio}
             fill="none"
             stroke="#a3e635"
-            strokeWidth={strokeWidth}
-            strokeLinecap="butt"
+            strokeWidth={espessura}
+            strokeDasharray={`${semicircunferencia} ${semicircunferencia}`}
+            strokeDashoffset={dashOffset}
+            strokeLinecap="round"
+            transform={`rotate(-180 ${cx} ${cy})`}
             style={{
-              transition: "d 1s ease-in-out",
-              filter: "drop-shadow(0 0 12px rgba(163, 230, 53, 0.3))",
+              transition: "stroke-dashoffset 1s ease-in-out",
+              filter: "drop-shadow(0 0 8px rgba(163, 230, 53, 0.3))",
             }}
           />
         </svg>
         
-        {/* Text overlay */}
-        <div className="absolute inset-0 flex flex-col items-center justify-end pb-8">
-          <p className="text-[10px] font-extrabold text-white/20 uppercase tracking-[0.2em] mb-1">
+        {/* Overlay de Conteúdo e Texto */}
+        <div className="absolute inset-x-0 bottom-6 flex flex-col items-center justify-end">
+          {children && <div className="mb-3 animate-in zoom-in duration-500">{children}</div>}
+          <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.2em] mb-1.5">
             {label}
           </p>
-          <div className="w-8 h-[1px] bg-white/10" />
+          <div className="w-10 h-[1px] bg-white/10" />
         </div>
       </div>
     </div>

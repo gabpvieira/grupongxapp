@@ -98,7 +98,7 @@ const ParcelaModal = ({ isOpen, onClose, venda, onSave, loading }: ParcelaModalP
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl bg-black border-white/10 text-white p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-white/5">
-          <DialogTitle className="text-xl font-bold font-syne uppercase tracking-tight">
+          <DialogTitle className="text-xl font-bold  uppercase tracking-tight">
             Gerenciar Pagamento
           </DialogTitle>
           <DialogDescription className="text-white/40 text-xs mt-1">
@@ -300,3 +300,4 @@ const ParcelaModal = ({ isOpen, onClose, venda, onSave, loading }: ParcelaModalP
 };
 
 export default ParcelaModal;
+

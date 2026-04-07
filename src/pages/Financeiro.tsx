@@ -170,7 +170,7 @@ const Financeiro = () => {
             <div className="bg-[#0b0b0b] border border-white/5 rounded-2xl p-6 md:p-10">
               <div className="max-w-3xl mx-auto space-y-8">
                 <div className="text-center md:text-left">
-                  <h2 className="text-2xl font-bold tracking-tight font-syne uppercase">Novo Lançamento</h2>
+                  <h2 className="text-2xl font-bold tracking-tight  uppercase">Novo Lançamento</h2>
                   <p className="text-white/40 text-[10px] font-black uppercase tracking-widest mt-1">Preencha os dados da venda abaixo</p>
                 </div>
                 <LancamentoForm onSubmit={handleCreate} loading={hookLoading} />
@@ -201,7 +201,7 @@ const Financeiro = () => {
       <AlertDialog open={!!deletingVenda} onOpenChange={(open) => !open && setDeletingVenda(null)}>
         <AlertDialogContent className="bg-black border-white/10 text-white p-8">
           <AlertDialogHeader className="mb-4">
-            <AlertDialogTitle className="text-xl font-bold font-syne uppercase">
+            <AlertDialogTitle className="text-xl font-bold  uppercase">
               Confirmar Exclusão
             </AlertDialogTitle>
             <AlertDialogDescription className="text-white/40">
@@ -226,3 +226,4 @@ const Financeiro = () => {
 };
 
 export default Financeiro;
+

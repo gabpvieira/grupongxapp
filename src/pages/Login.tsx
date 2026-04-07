@@ -61,7 +61,8 @@ const Login = () => {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap');
+        /* Satoshi font loaded via index.html */
+
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -69,8 +70,9 @@ const Login = () => {
           min-height: 100vh;
           display: flex;
           background: #070c09;
-          font-family: 'DM Sans', sans-serif;
+          font-family: 'Satoshi', '__no_fallback';
         }
+
 
         /* ── LEFT PANEL ── */
         .ngx-left {
@@ -161,7 +163,7 @@ const Login = () => {
         }
 
         .ngx-logo-text {
-          font-family: 'Syne', sans-serif;
+          font-family: 'Satoshi', '__no_fallback';
           font-weight: 700;
           font-size: 18px;
           color: #fff;
@@ -204,7 +206,7 @@ const Login = () => {
         }
 
         .ngx-headline {
-          font-family: 'Syne', sans-serif;
+          font-family: 'Satoshi', '__no_fallback';
           font-size: clamp(36px, 3.5vw, 52px);
           font-weight: 800;
           color: #fff;
@@ -286,7 +288,7 @@ const Login = () => {
         }
 
         .ngx-form-title {
-          font-family: 'Syne', sans-serif;
+          font-family: 'Satoshi', '__no_fallback';
           font-size: 26px;
           font-weight: 800;
           color: #fff;
@@ -329,7 +331,7 @@ const Login = () => {
           border-radius: 10px;
           color: #fff;
           font-size: 14px;
-          font-family: 'DM Sans', sans-serif;
+          font-family: 'Satoshi', '__no_fallback';
           padding: 0 16px;
           outline: none;
           transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
@@ -398,7 +400,7 @@ const Login = () => {
           border: none;
           border-radius: 10px;
           color: #070c09;
-          font-family: 'Syne', sans-serif;
+          font-family: 'Satoshi', '__no_fallback';
           font-weight: 700;
           font-size: 14px;
           letter-spacing: 0.3px;

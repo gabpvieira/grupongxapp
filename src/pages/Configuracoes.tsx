@@ -15,7 +15,10 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { SettingsSection } from '@/components/configuracoes/SettingsSection';
 import { useConfiguracoes } from '@/hooks/useConfiguracoes';
+import { useMetas } from '@/hooks/useMetas';
 import { toast } from 'sonner';
+import { formatCurrency, parseCurrency } from '@/lib/utils';
+import { maskBRL, unmaskBRL } from '@/lib/masks';
 
 const Configuracoes: React.FC = () => {
   const {
@@ -31,6 +34,8 @@ const Configuracoes: React.FC = () => {
     adicionarVendedor
   } = useConfiguracoes();
 
+  const { getProximasMetas, salvarMetaMes, loading: carregandoMetas } = useMetas();
+
   const [tabAtiva, setTabAtiva] = useState('geral');
   
   // Estado local para Meta Mensal
@@ -44,10 +49,16 @@ const Configuracoes: React.FC = () => {
   const [novoNome, setNovoNome] = useState('');
   const [novoEmail, setNovoEmail] = useState('');
 
+  // Estado para Metas Mensais
+  const [metasMensais, setMetasMensais] = useState<any[]>([]);
+  const [editandoMes, setEditandoMes] = useState<string | null>(null);
+  const [valorEditando, setValorEditando] = useState<string>('');
+
   // Sincronizar dados iniciais
   useEffect(() => {
     if (!loading) {
-      setLocalMetaMensal(dbMetaMensal.toString());
+      // Inicializar com máscara (valor vindo do banco é float, converter para base 100 antes de mascarar)
+      setLocalMetaMensal(maskBRL(String(Math.round(dbMetaMensal * 100))));
       
       const valObj: Record<string, string> = {};
       metasSemanais.forEach(m => {
@@ -55,7 +66,12 @@ const Configuracoes: React.FC = () => {
       });
       setValoresMetas(valObj);
     }
-  }, [loading, dbMetaMensal, metasSemanais]);
+    
+    // Carregar metas mensais
+    if (tabAtiva === 'metas') {
+      getProximasMetas().then(setMetasMensais);
+    }
+  }, [loading, dbMetaMensal, metasSemanais, tabAtiva, getProximasMetas]);
 
   const handleMetaSemanalChange = (metrica: string, valor: string) => {
     setValoresMetas(prev => ({ ...prev, [metrica]: valor }));
@@ -63,8 +79,8 @@ const Configuracoes: React.FC = () => {
   };
 
   const onSalvarMetaMensal = () => {
-    const valor = parseFloat(localMetaMensal);
-    if (isNaN(valor) || valor < 0) {
+    const valor = unmaskBRL(localMetaMensal);
+    if (valor <= 0) {
       toast.error('Valor da meta inválido');
       return;
     }
@@ -84,6 +100,23 @@ const Configuracoes: React.FC = () => {
     if (success) {
       setNovoNome('');
       setNovoEmail('');
+    }
+  };
+
+  const handleSalvarMetaMensalEspecifica = async (ano: number, mes: number) => {
+    const valor = unmaskBRL(valorEditando);
+    if (valor <= 0) {
+      toast.error('Valor da meta inválido');
+      return;
+    }
+
+    const success = await salvarMetaMes(ano, mes, valor);
+    if (success) {
+      toast.success('Meta atualizada com sucesso');
+      setEditandoMes(null);
+      getProximasMetas().then(setMetasMensais);
+    } else {
+      toast.error('Erro ao salvar meta');
     }
   };
 
@@ -138,39 +171,6 @@ const Configuracoes: React.FC = () => {
         {tabAtiva === 'geral' && (
           <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
             <SettingsSection
-              title="Meta Mensal de Vendas"
-              description="Define o valor alvo de faturamento mensal exibido no Dashboard e Financeiro."
-            >
-              <div className="flex items-center gap-3 max-w-sm">
-                <div className="relative flex-1 group">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 text-sm font-bold group-focus-within:text-[#a3e635] transition-colors">
-                    R$
-                  </span>
-                  <input
-                    type="number"
-                    value={localMetaMensal}
-                    onChange={e => setLocalMetaMensal(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full h-11 bg-black border-none rounded-xl pl-10 pr-4 text-white text-sm font-bold focus:ring-1 focus:ring-[#a3e635]/30 transition-all placeholder:text-white/10"
-                  />
-                </div>
-                <button
-                  onClick={onSalvarMetaMensal}
-                  disabled={salvando || localMetaMensal === dbMetaMensal.toString()}
-                  className="h-11 px-6 rounded-xl bg-[#a3e635] hover:bg-[#84cc16] text-black text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] shadow-lg shadow-[#a3e635]/10"
-                >
-                  {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar'}
-                </button>
-              </div>
-              <div className="flex items-center gap-1.5 mt-3 px-1">
-                <Info size={12} className="text-white/20" />
-                <p className="text-white/25 text-[10px] font-bold uppercase tracking-widest">
-                  Atualmente definida em: {formatCurrency(dbMetaMensal)}
-                </p>
-              </div>
-            </SettingsSection>
-
-            <SettingsSection
               title="Preferências do Sistema"
               description="Personalize o comportamento geral da plataforma."
             >
@@ -194,9 +194,117 @@ const Configuracoes: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: METAS SEMANAIS */}
+        {/* TAB 2: METAS */}
         {tabAtiva === 'metas' && (
-          <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
+          <div className="animate-in fade-in slide-in-from-bottom-3 duration-500 space-y-12">
+            <SettingsSection
+              title="Meta Padrão Global"
+              description="Valor usado como fallback para meses que não possuem uma meta específica definida."
+            >
+              <div className="flex items-center gap-3 max-w-sm">
+                <div className="relative flex-1 group">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={localMetaMensal}
+                    onChange={e => setLocalMetaMensal(maskBRL(e.target.value))}
+                    placeholder="R$ 0,00"
+                    className="w-full h-11 bg-black border-none rounded-xl px-5 text-white text-sm font-bold focus:ring-1 focus:ring-[#a3e635]/30 transition-all placeholder:text-white/10"
+                  />
+                </div>
+                <button
+                  onClick={onSalvarMetaMensal}
+                  disabled={salvando || unmaskBRL(localMetaMensal) <= 0 || unmaskBRL(localMetaMensal) === dbMetaMensal}
+                  className="h-11 px-6 rounded-xl bg-[#a3e635] hover:bg-[#84cc16] text-black text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] shadow-lg shadow-[#a3e635]/10"
+                >
+                  {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar'}
+                </button>
+              </div>
+            </SettingsSection>
+
+            <SettingsSection
+              title="Metas de Vendas por Mês"
+              description="Defina metas específicas para os próximos meses. Se não definida, o sistema usará a Meta Padrão Global."
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {metasMensais.map((m) => {
+                  const hoje = new Date();
+                  const isAtual = m.ano === hoje.getFullYear() && m.mes === (hoje.getMonth() + 1);
+
+                  return (
+                    <div 
+                      key={m.key} 
+                      className={`p-5 rounded-2xl border transition-all ${
+                        isAtual 
+                          ? 'bg-[#a3e635]/5 border-[#a3e635]/20' 
+                          : 'bg-black/40 border-white/5 hover:border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <p className="text-white font-bold text-sm capitalize">{m.label}</p>
+                          {isAtual && (
+                            <span className="px-2 py-0.5 rounded-lg bg-[#a3e635] text-black text-[10px] font-black uppercase tracking-tighter">
+                              Atual
+                            </span>
+                          )}
+                        </div>
+                        <Target size={14} className="text-white/20" />
+                      </div>
+
+                    {editandoMes === m.key ? (
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            autoFocus
+                            value={valorEditando}
+                            onChange={e => setValorEditando(maskBRL(e.target.value))}
+                            className="w-full h-9 bg-black border border-white/10 rounded-lg px-3 text-white text-sm font-bold focus:ring-1 focus:ring-[#a3e635]/30 outline-none"
+                          />
+                        </div>
+                        <button
+                          disabled={unmaskBRL(valorEditando) <= 0}
+                          onClick={() => handleSalvarMetaMensalEspecifica(m.ano, m.mes)}
+                          className="h-9 px-3 rounded-lg bg-[#a3e635] text-black text-[10px] font-black uppercase hover:bg-[#84cc16] transition-all disabled:opacity-30"
+                        >
+                          Salvar
+                        </button>
+                        <button
+                          onClick={() => setEditandoMes(null)}
+                          className="h-9 px-3 rounded-lg bg-white/5 text-white/40 text-[10px] font-black uppercase hover:bg-white/10 transition-all"
+                        >
+                          X
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xl font-black text-white tracking-tight">
+                            {m.valor ? formatCurrency(m.valor) : <span className="text-white/20 text-sm font-bold uppercase tracking-widest">Usar Padrão</span>}
+                          </p>
+                          {!m.valor && (
+                            <p className="text-[10px] text-white/20 font-medium">Herdando: {formatCurrency(dbMetaMensal)}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setEditandoMes(m.key);
+                            setValorEditando(maskBRL(String(Math.round((m.valor || dbMetaMensal) * 100))));
+                          }}
+                          className="h-8 px-4 rounded-lg bg-white/5 border border-white/10 text-white/40 hover:text-white hover:bg-white/10 text-[10px] font-bold uppercase transition-all"
+                        >
+                          Editar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              </div>
+            </SettingsSection>
+
             <SettingsSection
               title="Metas Semanais"
               description="Valores de referência usados na página de Métricas da Semana. Apenas métricas ativas são exibidas."

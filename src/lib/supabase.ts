@@ -40,7 +40,9 @@ export interface Database {
         Row: {
           id: string
           cliente: string
+          cliente_id: string | null
           data_fechamento: string
+
           servico: string
           recorrente: boolean
           quantidade_meses: number | null
@@ -53,7 +55,9 @@ export interface Database {
         Insert: {
           id?: string
           cliente: string
+          cliente_id?: string | null
           data_fechamento: string
+
           servico: string
           recorrente?: boolean
           quantidade_meses?: number | null
@@ -66,7 +70,9 @@ export interface Database {
         Update: {
           id?: string
           cliente?: string
+          cliente_id?: string | null
           data_fechamento?: string
+
           servico?: string
           recorrente?: boolean
           quantidade_meses?: number | null

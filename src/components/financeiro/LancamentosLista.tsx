@@ -8,6 +8,8 @@ import {
   Edit2,
   CreditCard,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+
 import { 
   Table, 
   TableBody, 
@@ -148,8 +150,18 @@ const LancamentosLista = ({
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-white font-bold">{venda.cliente}</span>
+                            {venda.cliente_id ? (
+                              <Link 
+                                to={`/app/clientes`} 
+                                className="text-white font-bold hover:text-[#a3e635] transition-colors"
+                              >
+                                {venda.cliente}
+                              </Link>
+                            ) : (
+                              <span className="text-white font-bold">{venda.cliente}</span>
+                            )}
                             <StatusBadge status={venda.status_pagamento} />
+
                             {venda.recorrente && (
                               <Badge className="bg-white/5 text-white/40 border-white/10 text-[9px] uppercase">
                                 Rec
@@ -172,7 +184,7 @@ const LancamentosLista = ({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <span className={`font-black font-syne ${venda.status_pagamento === 'cancelado' ? 'text-white/30 line-through' : 'text-[#a3e635]'}`}>
+                          <span className={`font-black  ${venda.status_pagamento === 'cancelado' ? 'text-white/30 line-through' : 'text-[#a3e635]'}`}>
                             {formatCurrency(venda.valor_efetivo)}
                           </span>
                           {venda.valor_ajustado !== null && (
@@ -223,13 +235,23 @@ const LancamentosLista = ({
                 <div key={venda.id} className="p-4 space-y-3">
                   <div className="flex justify-between items-start gap-2">
                     <div className="flex flex-col gap-1 min-w-0">
-                      <span className="text-white font-bold truncate">{venda.cliente}</span>
+                      {venda.cliente_id ? (
+                        <Link 
+                          to={`/app/clientes`} 
+                          className="text-white font-bold truncate active:text-[#a3e635]"
+                        >
+                          {venda.cliente}
+                        </Link>
+                      ) : (
+                        <span className="text-white font-bold truncate">{venda.cliente}</span>
+                      )}
                       <span className="text-white/40 text-xs">{venda.servico}</span>
+
                       <StatusBadge status={venda.status_pagamento} className="w-fit" />
                     </div>
                     <div className="flex flex-col items-end flex-shrink-0">
                       <div className="flex items-center gap-1">
-                        <span className={`font-black font-syne text-sm ${venda.status_pagamento === 'cancelado' ? 'text-white/30 line-through' : 'text-[#a3e635]'}`}>
+                        <span className={`font-black  text-sm ${venda.status_pagamento === 'cancelado' ? 'text-white/30 line-through' : 'text-[#a3e635]'}`}>
                           {formatCurrency(venda.valor_efetivo)}
                         </span>
                         {venda.valor_ajustado !== null && (
@@ -288,3 +310,4 @@ const LancamentosLista = ({
 };
 
 export default LancamentosLista;
+

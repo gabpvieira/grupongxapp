@@ -27,10 +27,14 @@ import { parseISO, isValid } from "date-fns";
 import { NgxDatePicker } from "@/components/ui/NgxDatePicker";
 import { Switch } from "@/components/ui/switch";
 import { useEffect } from "react";
+import { ClienteComboBox } from "../ClienteComboBox";
+
 
 const vendaSchema = z.object({
   cliente: z.string().min(1, "Cliente é obrigatório").max(100, "Máximo 100 caracteres"),
+  cliente_id: z.string().uuid().nullable().optional(),
   servico: z.string().min(1, "Serviço é obrigatório").max(150, "Máximo 150 caracteres"),
+
   valor: z.string().min(1, "Valor é obrigatório"),
   data_fechamento: z.date({ required_error: "Data é obrigatória" }),
   responsavel_id: z.string().min(1, "Responsável é obrigatório"),
@@ -59,7 +63,9 @@ const LancamentoForm = ({ initialData, onSubmit, loading }: LancamentoFormProps)
     resolver: zodResolver(vendaSchema),
     defaultValues: {
       cliente: initialData?.cliente || "",
+      cliente_id: initialData?.cliente_id || null,
       servico: initialData?.servico || "",
+
       responsavel_id: initialData?.responsavel_id || "",
       recorrente: initialData?.recorrente || false,
       quantidade_meses: initialData?.quantidade_meses || 12,
@@ -102,16 +108,20 @@ const LancamentoForm = ({ initialData, onSubmit, loading }: LancamentoFormProps)
               <FormItem>
                 <FormLabel className="text-white/60">Cliente</FormLabel>
                 <FormControl>
-                  <Input 
-                    placeholder="Nome do cliente" 
-                    {...field} 
-                    className="bg-white/5 border-white/10 text-white focus:border-[#a3e635] focus:ring-[#a3e635]"
+                  <ClienteComboBox 
+                    value={form.watch("cliente_id") || undefined}
+                    clienteNome={field.value}
+                    onChange={(id, nome) => {
+                      form.setValue("cliente", nome);
+                      form.setValue("cliente_id", id);
+                    }}
                   />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
+
 
           <FormField
             control={form.control}

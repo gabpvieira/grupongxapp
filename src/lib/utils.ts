@@ -19,3 +19,10 @@ export function formatCurrency(value: string | number): string {
 export function parseCurrency(value: string): number {
   return Number(value.replace(/[^\d]/g, "")) / 100;
 }
+
+export function formatDate(date: string | Date): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return new Intl.DateTimeFormat("pt-BR").format(d);
+}
+

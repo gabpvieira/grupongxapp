@@ -1,3 +1,6 @@
+/* Fonts loaded via index.html */
+
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -126,10 +129,23 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Poppins', 'Inter', 'Segoe UI', 'Roboto', sans-serif;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-family: 'Satoshi', '__no_fallback';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+
+  /* Previne zoom automático em inputs no iOS Safari */
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="number"],
+  input[type="date"],
+  input[type="password"],
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 
   /* Scrollbar styling */
@@ -246,6 +262,7 @@ input[type="time"] {
   color-scheme: dark;
   -webkit-appearance: none;
   -moz-appearance: textfield;
+  appearance: none;
 }
 
 /* Remove AM/PM e força formato 24 horas */

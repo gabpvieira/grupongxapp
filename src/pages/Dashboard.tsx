@@ -10,7 +10,13 @@ import {
   Briefcase, 
   Target, 
   Loader2, 
-  AlertCircle 
+  AlertCircle,
+  CheckCircle2,
+  TrendingUp,
+  TrendingDown,
+  Zap,
+  Flame,
+  Trophy
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -31,7 +37,7 @@ const Dashboard = () => {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-10 h-10 text-[#a3e635] animate-spin" />
-        <p className="text-white/40 font-syne animate-pulse uppercase tracking-[0.3em] text-xs">
+        <p className="text-white/40  animate-pulse uppercase tracking-[0.3em] text-xs">
           Carregando indicadores...
         </p>
       </div>
@@ -73,7 +79,7 @@ const Dashboard = () => {
           <div className="lg:col-span-8 space-y-6">
             
             {/* KPI Cards Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
               <KpiCard 
                 title="Total em Vendas" 
                 value={formatCurrency(data.totalVendas)}
@@ -86,23 +92,80 @@ const Dashboard = () => {
                 icon={Briefcase}
                 description="Contratos ativos"
               />
-              <KpiCard 
-                title="Progresso da Meta" 
-                value={`${percentMeta.toFixed(1)}%`}
-                icon={Target}
-                description={`Meta: ${formatCurrency(data.metaMensal)}`}
-              />
+              
+              {/* Card de Meta Simplificado */}
+              <div className="bg-[#0d0d0d] border border-white/5 rounded-2xl p-5 flex flex-col justify-between h-full relative overflow-hidden group hover:border-[#a3e635]/20 transition-all">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">Progresso da Meta</p>
+                  <Target size={14} className={data.superouMeta ? "text-[#a3e635]" : "text-white/20"} />
+                </div>
+
+                <div className="flex flex-col gap-1 mt-auto">
+                  <p className={`text-2xl font-bold tracking-tight transition-colors ${data.superouMeta ? 'text-white' : 'text-white/60'}`}>
+                    {data.percentualMeta.toFixed(1)}%
+                  </p>
+                  <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">
+                    Meta: {formatCurrency(data.metaMensal)}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {/* Gauge and Evolution Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-[#0d0d0d] border border-white/5 rounded-xl p-8 flex flex-col items-center justify-center min-h-[400px]">
+              <div className="bg-[#0d0d0d] border border-white/5 rounded-xl p-8 flex flex-col items-center justify-between min-h-[420px]">
+                
+                {data.percentualMeta >= 100 && (
+                  <div className="w-full mb-4 flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-700">
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border w-fit ${
+                      data.nivel === 'Lendário' ? 'bg-purple-400/10 border-purple-400/20 text-purple-400' :
+                      data.nivel === 'Extraordinário' ? 'bg-orange-400/10 border-orange-400/20 text-orange-400' :
+                      data.nivel === 'Excelente' ? 'bg-yellow-400/10 border-yellow-400/20 text-yellow-400' :
+                      data.nivel === 'Acima do Esperado' ? 'bg-emerald-400/10 border-emerald-400/20 text-emerald-400' :
+                      'bg-lime-400/10 border-lime-400/20 text-lime-400'
+                    }`}>
+                      {data.nivel === 'Lendário' && <Trophy size={12} />}
+                      {data.nivel === 'Extraordinário' && <Flame size={12} />}
+                      {data.nivel === 'Excelente' && <Zap size={12} />}
+                      {data.nivel === 'Acima do Esperado' && <TrendingUp size={12} />}
+                      {data.nivel === 'Meta Batida' && <CheckCircle2 size={12} />}
+                      <span className="text-[10px] font-black uppercase tracking-widest">{data.nivel}</span>
+                    </div>
+                    <span className="text-[#a3e635] text-xs font-bold tabular-nums">
+                      +{formatCurrency(data.excedente)} acima
+                    </span>
+                  </div>
+                )}
+
                 <CircularGauge 
                   value={data.totalVendas} 
                   max={data.metaMensal} 
                   label="Vendas vs Meta" 
-                />
-                <div className="text-center mt-6">
+                >
+                  {data.variacaoVsMesAnterior !== null && (
+                    <div className={`
+                      flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest
+                      px-2 py-1 rounded-full border
+                      ${data.variacaoVsMesAnterior >= 0
+                        ? 'bg-lime-400/10 border-lime-400/20 text-lime-400'
+                        : 'bg-rose-400/10 border-rose-400/20 text-rose-400'
+                      }
+                    `}>
+                      {data.variacaoVsMesAnterior >= 0
+                        ? <TrendingUp size={10} className="shrink-0" />
+                        : <TrendingDown size={10} className="shrink-0" />
+                      }
+                      <span className="tabular-nums">
+                        {data.variacaoVsMesAnterior >= 0 ? '+' : ''}
+                        {data.variacaoVsMesAnterior.toLocaleString('pt-BR', {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1
+                        })}% vs {data.mesAnteriorLabel}
+                      </span>
+                    </div>
+                  )}
+                </CircularGauge>
+
+                <div className="text-center mt-4">
                   <p className="text-5xl font-extrabold text-[#a3e635] tracking-tighter">
                     {formatCurrency(data.totalVendas)}
                   </p>
@@ -110,6 +173,12 @@ const Dashboard = () => {
                     Total em Vendas
                   </p>
                 </div>
+
+                {data.percentualMeta >= 100 && (
+                  <div className="w-full mt-6 pt-4 border-t border-white/10">
+                    <p className="text-xs text-white/40 italic text-center">"{data.mensagemFeedback}"</p>
+                  </div>
+                )}
               </div>
 
               <EvolucaoMensal 
@@ -157,3 +226,4 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+
