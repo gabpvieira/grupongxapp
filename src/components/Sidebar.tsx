@@ -11,6 +11,7 @@ import {
   Users,
   Briefcase,
   FileText,
+  Globe,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -19,6 +20,7 @@ const navItems = [
   { label: "CRM", sub: "Leads & Clientes", icon: Users, path: "/app/crm" },
   { label: "Serviços", sub: "Catálogo e preços", icon: Briefcase, path: "/app/servicos" },
   { label: "Orçamentos", sub: "Propostas e contratos", icon: FileText, path: "/app/orcamentos" },
+  { label: "Propostas", sub: "Páginas HTML", icon: Globe, path: "/admin/propostas" },
   { label: "Financeiro", sub: "Lançamentos e KPIs", icon: DollarSign, path: "/app/financeiro" },
   { label: "Métricas da Semana", sub: "Análises", icon: BarChart2, path: "/app/metricas" },
   { label: "Tarefas", sub: "Gerenciar", icon: CheckSquare, path: "/app/tarefas" },

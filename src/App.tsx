@@ -18,6 +18,9 @@ import Financeiro from "./pages/Financeiro";
 import Crm from "./pages/Crm";
 import Servicos from "./pages/Servicos";
 import Orcamentos from "./pages/Orcamentos";
+import Propostas from "./pages/admin/Propostas";
+import PropostaViewer from "./pages/public/PropostaViewer";
+
 
 const queryClient = new QueryClient();
 
@@ -32,19 +35,20 @@ const App = () => {
           <Sonner />
           <BrowserRouter>
             <Routes>
-              {/* Rotas públicas */}
+              {/* Rotas fixas prioritárias */}
               <Route path="/" element={<PublicPlaceholder />} />
               <Route path="/login" element={<Login />} />
 
-              {/* Rotas protegidas sob prefixo /app */}
-              <Route path="/app" element={<PrivateRoute />}>
-                <Route element={<AppLayout />}>
+              {/* Rotas protegidas (/app e /admin) */}
+              <Route element={<PrivateRoute />}>
+                <Route path="/app" element={<AppLayout />}>
                   <Route index element={<Navigate to="dashboard" replace />} />
                   <Route path="dashboard" element={<Index />} />
                   <Route path="financeiro" element={<Financeiro />} />
                   <Route path="crm" element={<Crm />} />
                   <Route path="servicos" element={<Servicos />} />
                   <Route path="orcamentos" element={<Orcamentos />} />
+                  <Route path="propostas" element={<Propostas />} />
                   <Route path="vendas" element={<Navigate to="/app/financeiro" replace />} />
                   <Route path="lancamento" element={<Navigate to="/app/financeiro" replace />} />
                   <Route path="metricas" element={<Metricas />} />
@@ -52,7 +56,15 @@ const App = () => {
                   <Route path="configuracoes" element={<Configuracoes />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
+
+                <Route path="/admin" element={<AppLayout />}>
+                  <Route index element={<Navigate to="propostas" replace />} />
+                  <Route path="propostas" element={<Propostas />} />
+                </Route>
               </Route>
+
+              {/* Rota de Propostas na raiz (subdominio) */}
+              <Route path="/:slug" element={<PropostaViewer />} />
 
               {/* Fallback global */}
               <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
